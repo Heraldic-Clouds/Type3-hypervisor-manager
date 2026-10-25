@@ -1,0 +1,27 @@
+{
+  "time": "2026-10-25T17:35:29.334799+00:00",
+  "origin": "https://miseenaby.me",
+  "recipient": "mea+mea-test-949728879587100@blackmail.heraldic.cloud",
+  "checks": [
+    "Unverified account cannot launch a desktop",
+    "Verification email received through real SMTP and IMAP",
+    "Delivered verification link works once",
+    "Password-reset email received through real SMTP and IMAP",
+    "Reset revokes old session, rejects replay and old password, and permits new login",
+    "Temporary account deactivated"
+  ],
+  "verificationMessage": {
+    "uid": "1",
+    "messageId": "<f2affb15ad32c5585fc0d9b663fbc94f@blackmail.heraldic.cloud>",
+    "from": "Mise En Abyme <mea@blackmail.heraldic.cloud>",
+    "dkimSignaturePresent": true,
+    "authenticationResults": ""
+  },
+  "resetMessage": {
+    "uid": "2",
+    "messageId": "<96841120769472a265ce84561216c98a@blackmail.heraldic.cloud>",
+    "from": "Mise En Abyme <mea@blackmail.heraldic.cloud>",
+    "dkimSignaturePresent": true,
+    "authenticationResults": ""
+  }
+}

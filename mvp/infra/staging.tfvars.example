@@ -11,6 +11,9 @@ desktop_type = "t3a.medium"
 desktop_cap = 2
 enable_dns = true
 require_verification = true
+# Set to an existing Secrets Manager ARN to use your own TLS SMTP server.
+# See docs/SMTP.md. An empty ARN keeps SES selected.
+smtp_secret_arn = ""
 idle_seconds = 1200
 warning_seconds = 900
 lifetime_seconds = 14400

@@ -9,3 +9,4 @@ mvp/infra/crash.log
 mvp/packer/manifest.json
 mvp/test-results/
 *.zip
+__pycache__/

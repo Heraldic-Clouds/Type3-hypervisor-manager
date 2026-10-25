@@ -53,6 +53,11 @@ resource "aws_iam_role_policy" "worker" {
     { Sid = "TransactionalMail", Effect = "Allow", Action = ["ses:SendEmail"], Resource = [aws_sesv2_email_identity.domain.arn], Condition = { StringEquals = { "ses:FromAddress" = "hello@${var.domain}" } } }
   ] })
 }
+resource "aws_iam_role_policy" "smtp_secret" {
+  count  = var.smtp_secret_arn == "" ? 0 : 1
+  role   = aws_iam_role.lambda["worker"].name
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = [var.smtp_secret_arn] }] })
+}
 resource "aws_lambda_function" "database" {
   for_each                       = toset(["api", "control", "migrate"])
   function_name                  = "${local.prefix}-${each.key}"
@@ -93,18 +98,18 @@ resource "aws_lambda_function" "worker" {
   timeout                        = 120
   reserved_concurrent_executions = 2
   environment {
-    variables = {
+    variables = merge({
       CONTROL_FUNCTION = aws_lambda_function.database["control"].function_name, RESOURCE_PREFIX = local.prefix, ACCOUNT_ID = local.account,
       DESKTOP_AMI      = var.desktop_ami, DESKTOP_SUBNET = aws_subnet.public[0].id, DESKTOP_SG = aws_security_group.desktop.id,
       DESKTOP_PROFILE  = aws_iam_instance_profile.desktop.name, DESKTOP_INSTANCE_TYPE = var.desktop_type,
       IDLE_SECONDS     = tostring(var.idle_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), STATE_MACHINE_NAME = local.prefix, STATE_MACHINE_ARN = "arn:aws:states:${var.region}:${local.account}:stateMachine:${local.prefix}", APP_ORIGIN = local.origin, EMAIL_FROM = "hello@${var.domain}"
-    }
+    }, var.smtp_secret_arn == "" ? {} : { SMTP_SECRET_ARN = var.smtp_secret_arn })
   }
   logging_config {
     log_format = "Text"
     log_group  = aws_cloudwatch_log_group.main["worker"].name
   }
-  depends_on = [aws_iam_role_policy.worker]
+  depends_on = [aws_iam_role_policy.worker, aws_iam_role_policy.smtp_secret]
 }
 resource "aws_apigatewayv2_api" "http" {
   name          = local.prefix

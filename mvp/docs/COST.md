@@ -18,6 +18,8 @@ Approximate USD pay-as-you-go before tax and credits.
 RDS instance rate was confirmed through AWS Pricing API: $0.016/hour.
 Other estimates use published AWS on-demand pricing; actual usage and regional
 price changes affect the bill. No NAT gateway, GPU, Multi-AZ RDS or paid tiers.
+The SMTP secret fits the secrets allowance. Hosting costs for the owner's
+existing mail server in the separate account are outside this MEA estimate.
 
 Two t3a.medium desktops running continuously add roughly $55/month in compute,
 $7.30 in public IPv4 and $2 in EBS, so a continuously occupied two-desktop alpha

@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/cloud"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/mail"
 	lambdaruntime "github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/sesv2"
-	sestypes "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/smithy-go"
 	"log/slog"
@@ -30,7 +29,7 @@ type worker struct {
 	cloud  cloud.Compute
 	invoke invokeAPI
 	sfn    *sfn.Client
-	ses    *sesv2.Client
+	mail   mailSender
 }
 type invokeAPI interface {
 	Invoke(context.Context, *lambda.InvokeInput, ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
@@ -212,6 +211,11 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 			}
 		}
 		for _, mail := range plan.Mails {
+			// Leave unsent messages queued if reconciliation used most of this
+			// invocation. Each SMTP attempt has its own ten-second deadline.
+			if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 15*time.Second {
+				break
+			}
 			var payload struct{ Email, Kind, Token string }
 			if err = json.Unmarshal(mail.Payload, &payload); err != nil {
 				return nil, err
@@ -223,7 +227,7 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 				subject = "Reset your Mise En Abyme password"
 			}
 			link := os.Getenv("APP_ORIGIN") + "/" + page + "#token=" + url.QueryEscape(payload.Token)
-			_, err = w.ses.SendEmail(ctx, &sesv2.SendEmailInput{FromEmailAddress: aws.String(os.Getenv("EMAIL_FROM")), Destination: &sestypes.Destination{ToAddresses: []string{payload.Email}}, Content: &sestypes.EmailContent{Simple: &sestypes.Message{Subject: &sestypes.Content{Data: aws.String(subject)}, Body: &sestypes.Body{Text: &sestypes.Content{Data: aws.String(subject + "\n\n" + link + "\n\nThis link expires in one hour. If you did not request this, ignore this email.")}}}}})
+			err = w.sendMail(ctx, payload.Email, subject, subject+"\n\n"+link+"\n\nThis link expires in one hour. If you did not request this, ignore this email.")
 			if err != nil {
 				slog.Error("email delivery failed", "outbox", mail.ID)
 				_, _ = w.db(ctx, control.Request{Action: "mail-failed", OutboxID: mail.ID})
@@ -244,8 +248,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	w := &worker{cloud: cloud.NewAWS(cfg), invoke: lambda.NewFromConfig(cfg), sfn: sfn.NewFromConfig(cfg), ses: sesv2.NewFromConfig(cfg)}
+	w := &worker{cloud: cloud.NewAWS(cfg), invoke: lambda.NewFromConfig(cfg), sfn: sfn.NewFromConfig(cfg), mail: newMailer(cfg)}
 	lambdaruntime.Start(w.handle)
 }
 
-var _ = time.Second
+func (w *worker) sendMail(ctx context.Context, to, subject, text string) error {
+	return w.mail.Send(ctx, mail.Message{To: to, Subject: subject, Text: text})
+}

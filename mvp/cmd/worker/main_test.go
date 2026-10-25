@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/cloud"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/mail"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"testing"
 )
@@ -36,9 +37,9 @@ func (f *fakeCompute) Ready(context.Context, string) (bool, error) {
 }
 
 type fakeInvoke struct {
-	lookup  control.Result
-	actions []string
-	ready   bool
+	lookup, reconcile control.Result
+	actions           []string
+	ready             bool
 }
 
 func (f *fakeInvoke) Invoke(ctx context.Context, r *lambda.InvokeInput, _ ...func(*lambda.Options)) (*lambda.InvokeOutput, error) {
@@ -51,6 +52,9 @@ func (f *fakeInvoke) Invoke(ctx context.Context, r *lambda.InvokeInput, _ ...fun
 	}
 	if request.Action == "ready" {
 		result.Ready = f.ready
+	}
+	if request.Action == "reconcile" {
+		result = f.reconcile
 	}
 	b, _ := json.Marshal(result)
 	return &lambda.InvokeOutput{Payload: b}, nil
@@ -113,5 +117,40 @@ func TestProbeWaitsForCredentialBootstrap(t *testing.T) {
 	r, e = w.handle(context.Background(), event{Action: "probe", ID: "test"})
 	if e != nil || r["ready"] != true || !compute.deleted {
 		t.Fatal("ready desktop credentials were not removed")
+	}
+}
+
+type fakeMail struct {
+	message mail.Message
+	err     error
+}
+
+func (f *fakeMail) Send(_ context.Context, m mail.Message) error {
+	f.message = m
+	return f.err
+}
+
+func TestMailAcknowledgedOnlyAfterTransportAcceptance(t *testing.T) {
+	for _, rejected := range []bool{false, true} {
+		t.Run(map[bool]string{false: "accepted", true: "rejected"}[rejected], func(t *testing.T) {
+			t.Setenv("APP_ORIGIN", "https://miseenaby.me")
+			payload := json.RawMessage(`{"Email":"test@example.test","Kind":"reset","Token":"test-token"}`)
+			db := &fakeInvoke{reconcile: control.Result{Mails: []control.Mail{{ID: "test-outbox", Payload: payload}}}}
+			sender := &fakeMail{}
+			if rejected {
+				sender.err = errors.New("SMTP rejected recipient")
+			}
+			w := worker{cloud: &fakeCompute{}, invoke: db, mail: sender}
+			if _, err := w.handle(context.Background(), event{Action: "watchdog"}); err != nil {
+				t.Fatal(err)
+			}
+			want := "mail-sent"
+			if rejected {
+				want = "mail-failed"
+			}
+			if len(db.actions) != 3 || db.actions[1] != want || sender.message.To != "test@example.test" || sender.message.Subject != "Reset your Mise En Abyme password" {
+				t.Fatal("delivery acknowledgement did not match transport result")
+			}
+		})
 	}
 }

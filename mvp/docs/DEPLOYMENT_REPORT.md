@@ -11,7 +11,7 @@ Golden image: ami-0964ca3ff232953a2.
 
 ## Performed against real AWS
 
-The final automated browser run passed at 2026-10-25 21:21:22 UTC.
+The final automated browser run passed at 2026-10-25 14:21:22 UTC.
 Complete timestamped evidence: verification/live-aws.json.
 
 - Registered two separate accounts through the deployed React website.
@@ -59,6 +59,9 @@ Screenshots: verification/ubuntu-desktop.png and verification/fresh-desktop.png.
   verified that API policy, browser warning/expiry and Guacamole's interval query
   follow configuration. See verification/timeout-policy.json. Docker frontend
   file polling is enabled for reliable updates on Windows bind mounts.
+- SMTP protocol tests passed with the race detector: STARTTLS and implicit TLS,
+  untrusted certificates, missing STARTTLS, rejected recipients, header injection,
+  cancellation and outbox acknowledgement only after server acceptance.
 
 See verification/go-tests.txt for the saved Go results. Both GitHub Actions
 workflows also passed: backend run 40199358243 and frontend run 40199643505.
@@ -71,10 +74,26 @@ capped desktops occupied continuously, before substantial traffic and tax.
 Two-desktop limit and $150 account budget are configured. Budget alerts are not
 hard spending limits. See COST.md.
 
-AWS denied SES production sending (case 179293322500539). Public arbitrary-inbox
-verification and password-reset delivery remain restricted. The deployment
-continues to require email verification by default, pending the owner's alpha
-policy choice. No public test credentials were left behind.
+The live worker now uses blackmail.heraldic.cloud:587 with STARTTLS, sending from
+Mise En Abyme <mea@blackmail.heraldic.cloud>. The password was imported from the
+owner's private env file into Secrets Manager without displaying or committing
+it. Only the worker can read the exact SMTP secret. Mail credentials are read
+per attempt so rotation does not need redeployment. Terraform applied one
+worker update and one scoped IAM policy; no other service was replaced.
+
+The real email acceptance run began at 2026-10-25 17:35:29 UTC. It registered
+a unique plus alias in the owner's mailbox, confirmed an unverified account
+could not launch a desktop, received the verification email through SMTP/IMAP,
+used its link and rejected replay. It then received the password-reset email,
+revoked the old session, rejected reset-token replay and the old password, and
+logged in with the replacement password. Both messages contained DKIM signatures.
+The test account was deactivated; no helper or database token read was used.
+Evidence: verification/smtp-live.json. See SMTP.md for the repeatable test.
+
+AWS denied SES production sending (case 179293322500539). SMTP is selected, so
+that restriction no longer blocks signup or reset. Verification remains required.
+Delivery was verified to the owner's mail server; Gmail/Outlook inbox placement
+was not tested. No public test credentials were left behind.
 
 Single-AZ database, one Guacamole task, no persistent desktop storage or audio.
 Scaling out and concurrent container rollout require shared replay protection

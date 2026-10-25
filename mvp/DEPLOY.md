@@ -90,16 +90,22 @@ identities and connection permissions. React uses the official common-js client;
 tokens stay in memory. See docs/SSO.md for the pinned protocol and revocation
 contract.
 
-Domain DKIM verification is complete. AWS denied SES production sending
-(case 179293322500539). The account remains sandboxed. Verification and reset
-flows are implemented, but arbitrary inbox delivery requires AWS approval.
-The default deployment requires verification; a restricted alpha can use
-individually verified SES recipient identities.
+The live worker sends through blackmail.heraldic.cloud:587 with mandatory
+STARTTLS, from Mise En Abyme <mea@blackmail.heraldic.cloud>. Credentials are in
+Secrets Manager, mea-staging/smtp; only its ARN is in Terraform. Verification
+remains required. Real verification and password-reset messages were received
+via IMAP, followed through the public API, and their one-use behavior tested.
 
-Live tests use SES simulator identities and a temporary IAM-only test helper
-to obtain their test verification links. This does not verify delivery to
-arbitrary inboxes. The helper, cmd/dbops, has no public route and is deleted
-after validation.
+See docs/SMTP.md for the secret format, setup, rotation and live email test.
+smtp_secret_arn selects SMTP; an empty ARN selects SES. AWS denied SES production
+sending (case 179293322500539), but that sandbox restriction does not apply to
+the selected SMTP transport. Do not clear the ARN unless SES is ready for use.
+
+The separate desktop acceptance test uses SES simulator identities and a
+temporary IAM-only helper to obtain their verification links. It isolates the
+desktop lifecycle from delivery. Real SMTP delivery is tested separately by
+scripts/test-email.py without database/helper token access. The helper, cmd/dbops,
+has no public route and is deleted after desktop validation.
 
 ## Lifecycle, networking and cost
 

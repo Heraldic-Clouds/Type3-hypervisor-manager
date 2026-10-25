@@ -48,6 +48,15 @@ variable "guac_desired_count" { default = 0 }
 variable "guac_image_tag" { default = "newbie-v1" }
 variable "enable_dns" { default = false }
 variable "require_verification" { default = true }
+variable "smtp_secret_arn" {
+  type        = string
+  default     = ""
+  description = "Existing Secrets Manager SMTP JSON secret; empty selects SES. Credentials stay outside Terraform."
+  validation {
+    condition     = var.smtp_secret_arn == "" || startswith(var.smtp_secret_arn, "arn:aws:secretsmanager:${var.region}:681773521032:secret:")
+    error_message = "Supply a Secrets Manager ARN in this deployment account and region, or leave empty for SES."
+  }
+}
 variable "idle_seconds" { default = 1200 }
 variable "warning_seconds" {
   default = 900
