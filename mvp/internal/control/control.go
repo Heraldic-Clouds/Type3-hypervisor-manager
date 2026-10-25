@@ -50,6 +50,8 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 	result := Result{}
 	db := s.Store.DB
 	switch r.Action {
+	case "active-sessions":
+	 e:=db.QueryRow(ctx,`SELECT count(*) FROM mea.desktop_sessions WHERE closed_at IS NULL AND connected_at IS NOT NULL`).Scan(&result.Count);return result,e
 	case "reconcile":
 		tx, e := db.Begin(ctx)
 		if e != nil {
@@ -137,6 +139,7 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 			return result, nil
 		}
 		result.Skip = state != "provisioning" && state != "ready"
+		result.Ready = state == "ready"
 		return result, e
 	case "assign":
 		tag, e := db.Exec(ctx, `UPDATE mea.desktops SET instance_id=$2,private_ip=$3 WHERE id=$1 AND state='provisioning'`, r.ID, r.InstanceID, r.IP)

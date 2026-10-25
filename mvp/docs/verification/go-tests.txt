@@ -1,0 +1,8 @@
+?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/api	[no test files]
+?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/dbops	[no test files]
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/worker	0.012s
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api	0.524s
+?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/cloud	[no test files]
+?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control	[no test files]
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security	0.241s
+?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store	[no test files]

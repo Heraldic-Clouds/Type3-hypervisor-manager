@@ -12,12 +12,14 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	secretstypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/smithy-go"
 	"os"
 	"strings"
 )
 
 type AWS struct {
+	SSM                                                                *ssm.Client
 	EC2                                                                *ec2.Client
 	Secrets                                                            *secretsmanager.Client
 	Prefix, Region, Account, AMI, Subnet, Group, Profile, InstanceType string
@@ -56,9 +58,28 @@ func (a *AWS) Launch(ctx context.Context, id string) (Instance, error) {
 		return Instance{}, e
 	}
 	if len(old) > 0 {
-		return old[0], nil
+		return old[0], a.ensureCredential(ctx, id, old[0].ID)
 	}
-	script := fmt.Sprintf("#!/bin/bash\nset -euo pipefail\nexec > /var/log/mea-bootstrap.log 2>&1\niptables -I OUTPUT -d 169.254.169.254 -m owner ! --uid-owner 0 -j REJECT\ninstall -d -m 700 /run/mea\nfor n in $(seq 1 90); do\n if aws secretsmanager get-secret-value --region '%s' --secret-id '%s' --query SecretString --output text > /run/mea/credential.json 2>/dev/null; then break; fi\n sleep 2\ndone\npython3 - <<'PY'\nimport json,subprocess\nwith open('/run/mea/credential.json') as f: password=json.load(f)['password']\nsubprocess.run(['chpasswd'],input='mea:'+password+'\\n',text=True,check=True)\nPY\nrm -f /run/mea/credential.json\nsystemctl enable --now xrdp\nshutdown -h +240\n", a.Region, a.secret(id))
+	script := fmt.Sprintf(`#!/bin/bash
+set -euo pipefail
+exec > /var/log/mea-bootstrap.log 2>&1
+systemctl stop xrdp || true
+iptables -I OUTPUT -d 169.254.169.254 -m owner ! --uid-owner 0 -j REJECT
+install -d -m 700 /run/mea
+for n in $(seq 1 90); do
+ if aws secretsmanager get-secret-value --region '%s' --secret-id '%s' --query SecretString --output text > /run/mea/credential.json 2>/dev/null; then break; fi
+ sleep 2
+done
+python3 - <<'PY'
+import json,subprocess
+with open('/run/mea/credential.json') as f: password=json.load(f)['password']
+subprocess.run(['chpasswd'],input='mea:'+password+'\n',text=True,check=True)
+PY
+rm -f /run/mea/credential.json
+systemctl enable --now xrdp
+touch /run/mea/ready
+shutdown -h +240
+`, a.Region, a.secret(id))
 	tags := []ec2types.Tag{{Key: aws.String("Name"), Value: aws.String("MEA Newbie " + id)}, {Key: aws.String("Project"), Value: aws.String("MiseEnAbyme")}, {Key: aws.String("MEAEnvironment"), Value: aws.String(a.Prefix)}, {Key: aws.String("MEADesktop"), Value: aws.String(id)}, {Key: aws.String("ManagedBy"), Value: aws.String("mea-worker")}}
 	out, e := a.EC2.RunInstances(ctx, &ec2.RunInstancesInput{ImageId: aws.String(a.AMI), InstanceType: ec2types.InstanceType(a.InstanceType), MinCount: aws.Int32(1), MaxCount: aws.Int32(1), ClientToken: aws.String(id), IamInstanceProfile: &ec2types.IamInstanceProfileSpecification{Name: aws.String(a.Profile)}, NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{{DeviceIndex: aws.Int32(0), AssociatePublicIpAddress: aws.Bool(true), SubnetId: aws.String(a.Subnet), Groups: []string{a.Group}, DeleteOnTermination: aws.Bool(true)}}, MetadataOptions: &ec2types.InstanceMetadataOptionsRequest{HttpTokens: ec2types.HttpTokensStateRequired, HttpPutResponseHopLimit: aws.Int32(1), HttpEndpoint: ec2types.InstanceMetadataEndpointStateEnabled}, UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(script))), InstanceInitiatedShutdownBehavior: ec2types.ShutdownBehaviorTerminate, CreditSpecification: &ec2types.CreditSpecificationRequest{CpuCredits: aws.String("standard")}, BlockDeviceMappings: []ec2types.BlockDeviceMapping{{DeviceName: aws.String("/dev/sda1"), Ebs: &ec2types.EbsBlockDevice{VolumeSize: aws.Int32(12), VolumeType: ec2types.VolumeTypeGp3, Encrypted: aws.Bool(true), DeleteOnTermination: aws.Bool(true)}}}, TagSpecifications: []ec2types.TagSpecification{{ResourceType: ec2types.ResourceTypeInstance, Tags: tags}, {ResourceType: ec2types.ResourceTypeVolume, Tags: tags}}})
 	if e != nil {
@@ -66,16 +87,19 @@ func (a *AWS) Launch(ctx context.Context, id string) (Instance, error) {
 	}
 	i := out.Instances[0]
 	instance := Instance{ID: aws.ToString(i.InstanceId), IP: aws.ToString(i.PrivateIpAddress), DesktopID: id, State: string(i.State.Name)}
+	return instance, a.ensureCredential(ctx, id, instance.ID)
+}
+func (a *AWS) ensureCredential(ctx context.Context, id, instanceID string) error {
 	password := security.Random(24)
 	payload, _ := json.Marshal(map[string]string{"password": password})
-	_, e = a.Secrets.CreateSecret(ctx, &secretsmanager.CreateSecretInput{Name: aws.String(a.secret(id)), SecretString: aws.String(string(payload)), Tags: []secretstypes.Tag{{Key: aws.String("Project"), Value: aws.String("MiseEnAbyme")}, {Key: aws.String("InstanceArn"), Value: aws.String(fmt.Sprintf("arn:aws:ec2:%s:%s:instance/%s", a.Region, a.Account, instance.ID))}}})
+	_, e := a.Secrets.CreateSecret(ctx, &secretsmanager.CreateSecretInput{Name: aws.String(a.secret(id)), SecretString: aws.String(string(payload)), Tags: []secretstypes.Tag{{Key: aws.String("Project"), Value: aws.String("MiseEnAbyme")}, {Key: aws.String("InstanceArn"), Value: aws.String(fmt.Sprintf("arn:aws:ec2:%s:%s:instance/%s", a.Region, a.Account, instanceID))}}})
 	if e != nil {
 		var api smithy.APIError
 		if !errors.As(e, &api) || api.ErrorCode() != "ResourceExistsException" {
-			return instance, e
+			return e
 		}
 	}
-	return instance, nil
+	return nil
 }
 func (a *AWS) Password(ctx context.Context, id string) (string, error) {
 	out, e := a.Secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: aws.String(a.secret(id))})
@@ -106,7 +130,7 @@ func (a *AWS) Terminate(ctx context.Context, id string) error {
 	return e
 }
 func NewAWS(cfg aws.Config) *AWS {
-	return &AWS{EC2: ec2.NewFromConfig(cfg), Secrets: secretsmanager.NewFromConfig(cfg), Prefix: os.Getenv("RESOURCE_PREFIX"), Region: cfg.Region, Account: os.Getenv("ACCOUNT_ID"), AMI: os.Getenv("DESKTOP_AMI"), Subnet: os.Getenv("DESKTOP_SUBNET"), Group: os.Getenv("DESKTOP_SG"), Profile: os.Getenv("DESKTOP_PROFILE"), InstanceType: os.Getenv("DESKTOP_INSTANCE_TYPE")}
+	return &AWS{EC2: ec2.NewFromConfig(cfg), SSM: ssm.NewFromConfig(cfg), Secrets: secretsmanager.NewFromConfig(cfg), Prefix: os.Getenv("RESOURCE_PREFIX"), Region: cfg.Region, Account: os.Getenv("ACCOUNT_ID"), AMI: os.Getenv("DESKTOP_AMI"), Subnet: os.Getenv("DESKTOP_SUBNET"), Group: os.Getenv("DESKTOP_SG"), Profile: os.Getenv("DESKTOP_PROFILE"), InstanceType: os.Getenv("DESKTOP_INSTANCE_TYPE")}
 }
 
 var _ Compute = (*AWS)(nil)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control"
@@ -84,6 +85,35 @@ func main() {
 		return
 	}
 	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400)}
+	if c.Local {
+		b, e := os.ReadFile(env("GUAC_SCHEMA", "/schema/guacamole.sql"))
+		if e != nil {
+			log.Fatal(e)
+		}
+		if e = st.Migrate(ctx, string(b)); e != nil {
+			log.Fatal(e)
+		}
+		svc := &control.Service{Store: st, IdleSeconds: c.IdleSeconds, GraceSeconds: c.GraceSeconds, Local: true}
+		go func() {
+			for {
+				plan, e := svc.Handle(ctx, control.Request{Action: "reconcile"})
+				if e == nil {
+					for _, j := range plan.Jobs {
+						switch j.State {
+						case "queued":
+							_, _ = svc.Handle(ctx, control.Request{Action: "claim", ID: j.ID, ARN: "local"})
+							_, _ = svc.Handle(ctx, control.Request{Action: "assign", ID: j.ID, InstanceID: "local-" + j.ID, IP: env("LOCAL_DESKTOP_HOST", "desktop")})
+						case "provisioning":
+							_, _ = svc.Handle(ctx, control.Request{Action: "ready", ID: j.ID, IP: env("LOCAL_DESKTOP_HOST", "desktop"), Password: os.Getenv("LOCAL_DESKTOP_PASSWORD")})
+						case "terminating":
+							_, _ = svc.Handle(ctx, control.Request{Action: "terminated", ID: j.ID})
+						}
+					}
+				}
+				time.Sleep(3 * time.Second)
+			}
+		}()
+	}
 	if mode == "control" {
 		svc := &control.Service{Store: st, IdleSeconds: c.IdleSeconds, GraceSeconds: c.GraceSeconds, Local: c.Local}
 		lambdaruntime.Start(svc.Handle)

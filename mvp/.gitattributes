@@ -1,0 +1,7 @@
+*.sh text eol=lf
+*.hcl text eol=lf
+*.tf text eol=lf
+Dockerfile text eol=lf
+*.go text eol=lf
+*.sql text eol=lf
+

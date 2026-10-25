@@ -1,0 +1,106 @@
+[
+  {
+    "step": "Identity mapping a",
+    "time": "2026-10-25T13:37:30.205Z",
+    "guacamoleUserId": 5,
+    "userId": "c231a43e-076f-451d-85b8-04b5eeb5343c"
+  },
+  {
+    "step": "Identity mapping b",
+    "time": "2026-10-25T13:37:32.937Z",
+    "guacamoleUserId": 6,
+    "userId": "c0ecf5d4-b320-4b13-8925-9c3a68761672"
+  },
+  {
+    "step": "Concurrent create idempotency",
+    "time": "2026-10-25T13:37:33.677Z",
+    "desktopId": "693bd3b9-511d-44d8-84cc-8fb9c8116c00"
+  },
+  {
+    "step": "Cross-user connect/activity/disconnect/destroy rejected",
+    "time": "2026-10-25T13:37:34.253Z"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:37:34.360Z",
+    "state": "queued"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:38:05.337Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:38:36.242Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:39:07.110Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Real golden-AMI EC2 ready",
+    "time": "2026-10-25T13:39:25.025Z",
+    "desktopId": "693bd3b9-511d-44d8-84cc-8fb9c8116c00",
+    "instanceId": "i-0412595dd052a62a1",
+    "volumeId": "vol-01e028f86b0b5dee1",
+    "ami": "ami-0964ca3ff232953a2",
+    "permissionCount": 1
+  },
+  {
+    "step": "Ubuntu rendering, keyboard and mouse verified",
+    "time": "2026-10-25T13:40:14.180Z",
+    "proof": "MEA_BROWSER_INPUT_OK"
+  },
+  {
+    "step": "Responsive desktop resize verified",
+    "time": "2026-10-25T13:40:16.219Z"
+  },
+  {
+    "step": "Disconnected and triggered server idle expiration",
+    "time": "2026-10-25T13:40:17.446Z"
+  },
+  {
+    "step": "Automatic EC2 termination and EBS deletion verified",
+    "time": "2026-10-25T13:42:06.079Z",
+    "instanceId": "i-0412595dd052a62a1",
+    "volumeId": "vol-01e028f86b0b5dee1"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:42:06.364Z",
+    "state": "queued"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:42:37.262Z",
+    "state": "queued"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:43:08.222Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:43:39.087Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T13:44:10.021Z",
+    "state": "provisioning"
+  },
+  {
+    "step": "Fresh desktop provisioned and connected",
+    "time": "2026-10-25T13:45:23.301Z",
+    "desktopId": "e0c8e23b-0c18-4e7c-b86a-ad646e41f13d",
+    "instanceId": "i-0628727ed31e2714c"
+  },
+  {
+    "step": "Live acceptance workflow passed",
+    "time": "2026-10-25T13:45:23.521Z"
+  }
+]

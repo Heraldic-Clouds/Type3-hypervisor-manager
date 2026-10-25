@@ -11,4 +11,5 @@ type Compute interface {
 	Terminate(context.Context, string) error
 	Password(context.Context, string) (string, error)
 	DeleteCredential(context.Context, string) error
+	Ready(context.Context, string) (bool, error)
 }

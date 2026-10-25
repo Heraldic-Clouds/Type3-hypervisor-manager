@@ -29,11 +29,12 @@ allowlist, encrypted disposable 12 GiB volumes, 20-minute inactivity limit,
 5-minute disconnect grace, four-hour absolute lifespan and an independent
 one-minute watchdog. EC2 CPU credits use standard mode to avoid surplus charges.
 
-Budget: $150/month, alerts at 50% actual and 100% forecast. **Budget alerts are
+Budget: $150/month, account-wide, alerts at 50% actual and 100% forecast. **Budget alerts are
 not hard spending limits.** Network traffic, attacks, log volume, build retries,
 and keeping the deployment running can incur additional charges. API throttling
-and short log retention reduce exposure. Verify cost allocation tags are activated
-in Billing; tag-filtered budgets depend on that activation.
+and short log retention reduce exposure. The linked deployment account cannot
+activate cost-allocation tags, so the budget includes all spending in this account
+instead of relying on an inactive Project tag filter. Resources still carry cost tags.
 
 Sources: https://aws.amazon.com/fargate/pricing/
 https://aws.amazon.com/rds/postgresql/pricing/

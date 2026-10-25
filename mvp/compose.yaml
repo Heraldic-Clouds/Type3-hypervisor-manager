@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: mea
+      POSTGRES_USER: mea_owner
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?Run scripts/local.ps1 first}
+    ports: ["127.0.0.1:55433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U mea_owner -d mea"]
+      interval: 3s
+      retries: 20
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://mea_owner:${LOCAL_DB_PASSWORD}@postgres:5432/mea?sslmode=disable
+      GUAC_JSON_KEY: ${GUAC_JSON_KEY}
+      SECURE_COOKIES: "false"
+      REQUIRE_VERIFICATION: "false"
+      LOCAL_MODE: "true"
+      LOCAL_DESKTOP_HOST: desktop
+      LOCAL_DESKTOP_PASSWORD: ${LOCAL_DESKTOP_PASSWORD}
+      APP_ORIGIN: http://localhost:5173
+      DESKTOP_CAP: "1"
+    ports: ["127.0.0.1:8081:8081"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      desktop: {condition: service_started}
+  guacd:
+    image: guacamole/guacd:1.6.0
+  guacamole:
+    build:
+      context: .
+      dockerfile: guacamole/Dockerfile
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      GUACD_HOSTNAME: guacd
+      POSTGRESQL_ENABLED: "true"
+      POSTGRESQL_HOSTNAME: postgres
+      POSTGRESQL_DATABASE: mea
+      POSTGRESQL_USERNAME: mea_owner
+      POSTGRESQL_PASSWORD: ${LOCAL_DB_PASSWORD}
+      JSON_ENABLED: "true"
+      JSON_SECRET_KEY: ${GUAC_JSON_KEY}
+      EXTENSION_PRIORITY: json,postgresql
+      MEA_JDBC_URL: jdbc:postgresql://postgres:5432/mea
+      MEA_DB_USER: mea_owner
+      MEA_DB_PASSWORD: ${LOCAL_DB_PASSWORD}
+    depends_on: [api,guacd]
+  desktop:
+    build:
+      context: .
+      dockerfile: desktop/Dockerfile
+    environment:
+      LOCAL_DESKTOP_PASSWORD: ${LOCAL_DESKTOP_PASSWORD}
+    shm_size: 256mb
+  frontend:
+    image: node:24.10.0
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    volumes: ["../../mea-web/newbie:/app",frontdeps:/app/node_modules]
+    ports: ["127.0.0.1:5173:5173"]
+    environment:
+      VITE_API_TARGET: http://api:8081
+      VITE_GUAC_TARGET: http://guacamole:8080
+    depends_on: [api,guacamole]
+volumes:
+  pgdata:
+  frontdeps:
+

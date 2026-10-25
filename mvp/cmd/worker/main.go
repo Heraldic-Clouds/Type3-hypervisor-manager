@@ -28,10 +28,11 @@ type event struct {
 }
 type worker struct {
 	cloud  cloud.Compute
-	invoke *lambda.Client
+	invoke invokeAPI
 	sfn    *sfn.Client
 	ses    *sesv2.Client
 }
+type invokeAPI interface { Invoke(context.Context,*lambda.InvokeInput,...func(*lambda.Options))(*lambda.InvokeOutput,error) }
 
 func (w *worker) db(ctx context.Context, r control.Request) (control.Result, error) {
 	b, _ := json.Marshal(r)
@@ -77,6 +78,10 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 		if state.Skip {
 			return nil, fmt.Errorf("desktop lease revoked")
 		}
+		if state.Ready {
+			result["ready"] = true
+			return result, nil
+		}
 		instance, err := w.cloud.Launch(ctx, e.ID)
 		if err != nil {
 			return nil, err
@@ -98,6 +103,10 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 		if state.Skip {
 			return nil, fmt.Errorf("desktop lease revoked")
 		}
+		if state.Ready {
+			result["ready"] = true
+			return result, nil
+		}
 		instances, err := w.cloud.Find(ctx, e.ID)
 		if err != nil {
 			return nil, err
@@ -106,6 +115,13 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 			return nil, fmt.Errorf("desktop instance missing")
 		}
 		if instances[0].State != "running" {
+			return result, nil
+		}
+		booted, err := w.cloud.Ready(ctx, instances[0].ID)
+		if err != nil {
+			return nil, err
+		}
+		if !booted {
 			return result, nil
 		}
 		password, err := w.cloud.Password(ctx, e.ID)

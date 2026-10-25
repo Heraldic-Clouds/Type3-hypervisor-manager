@@ -1,0 +1,8 @@
+.env
+.env.*
+build/
+infra/
+test-results/
+.git/
+**/node_modules/
+

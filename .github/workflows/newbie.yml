@@ -1,0 +1,42 @@
+name: Newbie backend
+on:
+  push:
+    paths: ['mvp/**','.github/workflows/newbie.yml']
+  pull_request:
+    paths: ['mvp/**','.github/workflows/newbie.yml']
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mvp
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_DB: mea_test
+          POSTGRES_PASSWORD: local-ci-disposable
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://postgres:local-ci-disposable@localhost:5432/mea_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: mvp/go.sum
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: |
+          mkdir -p build/api/schema build/worker
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o build/api/bootstrap ./cmd/api
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o build/worker/bootstrap ./cmd/worker
+          cp schema/* build/api/schema/
+          python3 scripts/package.py
+      - run: docker run --rm -v "$PWD:/work" -w /work/infra hashicorp/terraform:1.17.0 init -backend=false -input=false
+      - run: docker run --rm -v "$PWD:/work" -w /work/infra hashicorp/terraform:1.17.0 validate
+      - run: docker build -f guacamole/Dockerfile -t mea-guacamole:ci .
+

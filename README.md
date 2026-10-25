@@ -1,3 +1,12 @@
+# Mise En Abyme Newbie MVP
+
+The current deployed cloud desktop service is in [mvp](mvp/DEPLOY.md). It uses
+Go Lambda, PostgreSQL, Guacamole on Fargate and disposable Ubuntu EC2 desktops.
+Frontend: the sibling mea-web repository's newbie directory. Deployment and
+local development instructions, tests and cost information are in mvp.
+
+The original Type3 prototype below is retained for history and is not deployed.
+
 Type3 - Remote LXD server manager
 ==================================================
 

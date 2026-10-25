@@ -1,0 +1,7 @@
+environment = "dev"
+desktop_cap = 1
+guac_desired_count = 0
+enable_dns = false
+# Local dev uses Docker Compose. For a second AWS environment, supply a distinct
+# domain/zone and state file; never share the staging Terraform state.
+
