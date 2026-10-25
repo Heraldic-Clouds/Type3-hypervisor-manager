@@ -15,10 +15,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/smithy-go"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type AWS struct {
+	IdleSeconds, LifetimeSeconds                                       int
 	SSM                                                                *ssm.Client
 	EC2                                                                *ec2.Client
 	Secrets                                                            *secretsmanager.Client
@@ -78,8 +80,11 @@ PY
 rm -f /run/mea/credential.json
 systemctl enable --now xrdp
 touch /run/mea/ready
-shutdown -h +240
-`, a.Region, a.secret(id))
+install -d -m 700 /etc/mea
+echo %d > /etc/mea/idle-ms
+sed -i 's/value>=1200000/value>=%d/' /usr/local/sbin/mea-session-monitor
+shutdown -h +%d
+`, a.Region, a.secret(id), a.IdleSeconds*1000, a.IdleSeconds*1000, (a.LifetimeSeconds+59)/60)
 	tags := []ec2types.Tag{{Key: aws.String("Name"), Value: aws.String("MEA Newbie " + id)}, {Key: aws.String("Project"), Value: aws.String("MiseEnAbyme")}, {Key: aws.String("MEAEnvironment"), Value: aws.String(a.Prefix)}, {Key: aws.String("MEADesktop"), Value: aws.String(id)}, {Key: aws.String("ManagedBy"), Value: aws.String("mea-worker")}}
 	out, e := a.EC2.RunInstances(ctx, &ec2.RunInstancesInput{ImageId: aws.String(a.AMI), InstanceType: ec2types.InstanceType(a.InstanceType), MinCount: aws.Int32(1), MaxCount: aws.Int32(1), ClientToken: aws.String(id), IamInstanceProfile: &ec2types.IamInstanceProfileSpecification{Name: aws.String(a.Profile)}, NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{{DeviceIndex: aws.Int32(0), AssociatePublicIpAddress: aws.Bool(true), SubnetId: aws.String(a.Subnet), Groups: []string{a.Group}, DeleteOnTermination: aws.Bool(true)}}, MetadataOptions: &ec2types.InstanceMetadataOptionsRequest{HttpTokens: ec2types.HttpTokensStateRequired, HttpPutResponseHopLimit: aws.Int32(1), HttpEndpoint: ec2types.InstanceMetadataEndpointStateEnabled}, UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(script))), InstanceInitiatedShutdownBehavior: ec2types.ShutdownBehaviorTerminate, CreditSpecification: &ec2types.CreditSpecificationRequest{CpuCredits: aws.String("standard")}, BlockDeviceMappings: []ec2types.BlockDeviceMapping{{DeviceName: aws.String("/dev/sda1"), Ebs: &ec2types.EbsBlockDevice{VolumeSize: aws.Int32(12), VolumeType: ec2types.VolumeTypeGp3, Encrypted: aws.Bool(true), DeleteOnTermination: aws.Bool(true)}}}, TagSpecifications: []ec2types.TagSpecification{{ResourceType: ec2types.ResourceTypeInstance, Tags: tags}, {ResourceType: ec2types.ResourceTypeVolume, Tags: tags}}})
 	if e != nil {
@@ -130,7 +135,15 @@ func (a *AWS) Terminate(ctx context.Context, id string) error {
 	return e
 }
 func NewAWS(cfg aws.Config) *AWS {
-	return &AWS{EC2: ec2.NewFromConfig(cfg), SSM: ssm.NewFromConfig(cfg), Secrets: secretsmanager.NewFromConfig(cfg), Prefix: os.Getenv("RESOURCE_PREFIX"), Region: cfg.Region, Account: os.Getenv("ACCOUNT_ID"), AMI: os.Getenv("DESKTOP_AMI"), Subnet: os.Getenv("DESKTOP_SUBNET"), Group: os.Getenv("DESKTOP_SG"), Profile: os.Getenv("DESKTOP_PROFILE"), InstanceType: os.Getenv("DESKTOP_INSTANCE_TYPE")}
+	return &AWS{IdleSeconds: setting("IDLE_SECONDS", 1200), LifetimeSeconds: setting("LIFETIME_SECONDS", 14400), EC2: ec2.NewFromConfig(cfg), SSM: ssm.NewFromConfig(cfg), Secrets: secretsmanager.NewFromConfig(cfg), Prefix: os.Getenv("RESOURCE_PREFIX"), Region: cfg.Region, Account: os.Getenv("ACCOUNT_ID"), AMI: os.Getenv("DESKTOP_AMI"), Subnet: os.Getenv("DESKTOP_SUBNET"), Group: os.Getenv("DESKTOP_SG"), Profile: os.Getenv("DESKTOP_PROFILE"), InstanceType: os.Getenv("DESKTOP_INSTANCE_TYPE")}
+}
+
+func setting(name string, fallback int) int {
+	n, e := strconv.Atoi(os.Getenv(name))
+	if e != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 var _ Compute = (*AWS)(nil)

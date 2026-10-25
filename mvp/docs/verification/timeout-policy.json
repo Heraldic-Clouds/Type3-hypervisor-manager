@@ -1,0 +1,10 @@
+{
+  "policy": {
+    "idleSeconds": 60,
+    "warningSeconds": 45
+  },
+  "browserWarningPassed": true,
+  "browserExpirationPassed": true,
+  "clock": "Real clock, 60-second configured idle timeout",
+  "guacamoleSQLLeaseCheckPassed": true
+}

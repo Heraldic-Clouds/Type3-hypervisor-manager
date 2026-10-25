@@ -6,11 +6,13 @@ domain = "miseenaby.me"
 zone_id = "Z2VQV7OZ3AMOWY"
 desktop_ami = "ami-0964ca3ff232953a2"
 guac_desired_count = 1
-guac_image_tag = "newbie-v2"
+guac_image_tag = "newbie-v3"
 desktop_type = "t3a.medium"
 desktop_cap = 2
 enable_dns = true
 require_verification = true
 idle_seconds = 1200
+warning_seconds = 900
+lifetime_seconds = 14400
 grace_seconds = 300
 

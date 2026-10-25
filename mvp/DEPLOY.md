@@ -48,7 +48,7 @@ Recreate it from infra/staging.tfvars.example if needed.
 The script verifies the account, checks connected sessions, builds artifacts,
 creates a Terraform plan, applies it, runs migrations and uploads the frontend.
 Use a new Guacamole image tag for extension changes; update guac_image_tag
-and the image build/push command together. Current tag: newbie-v2.
+and use the matching deployment -ImageTag argument. Current tag: newbie-v3.
 
 Do not change Lambda ZIPs while their Terraform plan is applying.
 scripts/package.py sets executable permissions on the Linux bootstrap binary.
@@ -109,8 +109,10 @@ expired sessions, abandoned instances and orphaned connections. Starting and
 explicitly destroying a desktop may wait up to one scheduler interval.
 
 Defaults: warning at 15 minutes without input, termination at 20, five-minute
-disconnect grace, four-hour absolute machine life. The browser/Java/AMI backstop
-currently use these alpha defaults; change them together with Terraform timeouts.
+disconnect grace, four-hour absolute machine life. Terraform warning_seconds,
+idle_seconds, grace_seconds and lifetime_seconds configure the API, browser,
+Guacamole listener and launch-time instance backstop together. Local equivalents
+are LOCAL_WARNING_SECONDS and LOCAL_IDLE_SECONDS in the Compose environment.
 
 No public SSH or RDP. Only Guacamole and readiness-probe Lambdas can reach RDP.
 The private Single-AZ RDS and database Lambdas have no internet route; Fargate
@@ -139,6 +141,11 @@ From mea-web/newbie:
     npm audit --audit-level=high
     $env:MEA_LOCAL_E2E='1'
     npx playwright test --workers=1
+
+To test shortened real-time expiration, set LOCAL_IDLE_SECONDS=60 and
+LOCAL_WARNING_SECONDS=45, recreate the Compose api/guacamole services, and run
+node scripts/timeouts-e2e.mjs from mea-web/newbie. Remove those environment
+overrides and recreate the services to restore the 15/20-minute defaults.
 
 Full AWS test: run ./scripts/test-live.ps1 from mvp. It builds, creates the
 temporary helper, runs the browser test, and deletes the helper in a finally block.

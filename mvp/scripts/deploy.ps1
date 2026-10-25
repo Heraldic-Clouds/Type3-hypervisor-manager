@@ -1,4 +1,4 @@
-param([switch]$PlanOnly,[string]$ImageTag='newbie-v2')
+param([switch]$PlanOnly,[string]$ImageTag='newbie-v3')
 $ErrorActionPreference='Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 $account=aws sts get-caller-identity --profile stratus2-tantalus --query Account --output text

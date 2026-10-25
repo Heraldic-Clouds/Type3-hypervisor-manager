@@ -11,15 +11,15 @@
 === RUN   TestProbeWaitsForCredentialBootstrap
 --- PASS: TestProbeWaitsForCredentialBootstrap (0.00s)
 PASS
-ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/worker	0.010s
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/worker	(cached)
 === RUN   TestRealPostgresAuthorizationAndLifecycle
-2026/10/25 13:55:32 ERROR request failed path=/api/me error="closed pool"
-2026/10/25 13:55:32 ERROR request failed path=/api/health error="closed pool"
+2026/10/25 14:05:31 ERROR request failed path=/api/me error="closed pool"
+2026/10/25 14:05:31 ERROR request failed path=/api/health error="closed pool"
     integration_test.go:193: PASS: transactional identity mapping, concurrent idempotency, two-user isolation, CSRF, cap, idle termination, fresh lease, expiry, revocation
     integration_test.go:194: PASS: password reset, token replay protection, new-password login and fail-closed database outage
 --- PASS: TestRealPostgresAuthorizationAndLifecycle (0.62s)
 PASS
-ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api	0.633s
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api	0.628s
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/cloud	[no test files]
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control	[no test files]
 === RUN   TestArgon2

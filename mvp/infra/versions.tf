@@ -49,6 +49,20 @@ variable "guac_image_tag" { default = "newbie-v1" }
 variable "enable_dns" { default = false }
 variable "require_verification" { default = true }
 variable "idle_seconds" { default = 1200 }
+variable "warning_seconds" {
+  default = 900
+  validation {
+    condition     = var.warning_seconds >= 0 && var.warning_seconds < var.idle_seconds
+    error_message = "Warning must precede idle termination."
+  }
+}
+variable "lifetime_seconds" {
+  default = 14400
+  validation {
+    condition     = var.lifetime_seconds >= 300 && var.lifetime_seconds <= 14400
+    error_message = "Alpha lifetime must be between five minutes and four hours."
+  }
+}
 variable "grace_seconds" { default = 300 }
 variable "budget_email" { default = "thomasdxdenton@hotmail.com" }
 data "aws_caller_identity" "current" {}

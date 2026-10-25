@@ -38,6 +38,7 @@ resource "aws_ecs_task_definition" "guac" {
         JSON_ENABLED                    = "true", EXTENSION_PRIORITY = "json,postgresql", REMOTE_IP_VALVE_ENABLED = "true",
         POSTGRESQL_AUTO_CREATE_ACCOUNTS = "false", API_SESSION_TIMEOUT = "5", MEA_JDBC_URL = "jdbc:postgresql://${aws_db_instance.database.endpoint}/mea?sslmode=verify-full&sslrootcert=/opt/guacamole/rds-ca.pem", MEA_DB_USER = "mea_guac",
         MEA_ORIGIN                      = local.origin
+        MEA_IDLE_SECONDS                = tostring(var.idle_seconds)
       } : { name = k, value = v }],
       secrets     = [{ name = "POSTGRESQL_PASSWORD", valueFrom = "${aws_secretsmanager_secret.database["guac"].arn}:password::" }, { name = "MEA_DB_PASSWORD", valueFrom = "${aws_secretsmanager_secret.database["guac"].arn}:password::" }, { name = "JSON_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.database["guac"].arn}:jsonKey::" }],
       healthCheck = { command = ["CMD-SHELL", "curl -fsS http://localhost:8080/guacamole/ >/dev/null || exit 1"], interval = 30, timeout = 5, retries = 3, startPeriod = 90 },

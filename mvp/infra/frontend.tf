@@ -29,6 +29,7 @@ resource "aws_cloudfront_function" "spa" {
   code    = <<-JS
  function handler(event) {
   var request=event.request;
+  if(request.headers.host.value==='www.${var.domain}') return {statusCode:301,statusDescription:'Moved Permanently',headers:{location:{value:'https://${var.domain}'+request.uri}}};
   if (request.uri.indexOf('.')===-1 && !request.uri.startsWith('/api/') && !request.uri.startsWith('/guacamole/')) request.uri='/index.html';
   return request;
  }

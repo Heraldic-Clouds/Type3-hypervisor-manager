@@ -72,7 +72,7 @@ resource "aws_lambda_function" "database" {
   environment {
     variables = {
       MODE       = each.key, DB_SECRET_ARN = aws_secretsmanager_secret.database[each.key == "migrate" ? "owner" : "app"].arn,
-      APP_ORIGIN = local.origin, DESKTOP_CAP = tostring(var.desktop_cap), IDLE_SECONDS = tostring(var.idle_seconds), GRACE_SECONDS = tostring(var.grace_seconds), SECURE_COOKIES = "true", REQUIRE_VERIFICATION = tostring(var.require_verification), GUAC_SCHEMA = "/var/task/schema/guacamole.sql"
+      APP_ORIGIN = local.origin, DESKTOP_CAP = tostring(var.desktop_cap), IDLE_SECONDS = tostring(var.idle_seconds), WARNING_SECONDS = tostring(var.warning_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), GRACE_SECONDS = tostring(var.grace_seconds), SECURE_COOKIES = "true", REQUIRE_VERIFICATION = tostring(var.require_verification), GUAC_SCHEMA = "/var/task/schema/guacamole.sql"
     }
   }
   logging_config {
@@ -94,10 +94,10 @@ resource "aws_lambda_function" "worker" {
   reserved_concurrent_executions = 2
   environment {
     variables = {
-      CONTROL_FUNCTION   = aws_lambda_function.database["control"].function_name, RESOURCE_PREFIX = local.prefix, ACCOUNT_ID = local.account,
-      DESKTOP_AMI        = var.desktop_ami, DESKTOP_SUBNET = aws_subnet.public[0].id, DESKTOP_SG = aws_security_group.desktop.id,
-      DESKTOP_PROFILE    = aws_iam_instance_profile.desktop.name, DESKTOP_INSTANCE_TYPE = var.desktop_type,
-      STATE_MACHINE_NAME = local.prefix, STATE_MACHINE_ARN = "arn:aws:states:${var.region}:${local.account}:stateMachine:${local.prefix}", APP_ORIGIN = local.origin, EMAIL_FROM = "hello@${var.domain}"
+      CONTROL_FUNCTION = aws_lambda_function.database["control"].function_name, RESOURCE_PREFIX = local.prefix, ACCOUNT_ID = local.account,
+      DESKTOP_AMI      = var.desktop_ami, DESKTOP_SUBNET = aws_subnet.public[0].id, DESKTOP_SG = aws_security_group.desktop.id,
+      DESKTOP_PROFILE  = aws_iam_instance_profile.desktop.name, DESKTOP_INSTANCE_TYPE = var.desktop_type,
+      IDLE_SECONDS     = tostring(var.idle_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), STATE_MACHINE_NAME = local.prefix, STATE_MACHINE_ARN = "arn:aws:states:${var.region}:${local.account}:stateMachine:${local.prefix}", APP_ORIGIN = local.origin, EMAIL_FROM = "hello@${var.domain}"
     }
   }
   logging_config {

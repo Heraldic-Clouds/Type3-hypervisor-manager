@@ -23,6 +23,8 @@ services:
       LOCAL_DESKTOP_PASSWORD: ${LOCAL_DESKTOP_PASSWORD}
       APP_ORIGIN: http://localhost:5173
       DESKTOP_CAP: "1"
+      IDLE_SECONDS: ${LOCAL_IDLE_SECONDS:-1200}
+      WARNING_SECONDS: ${LOCAL_WARNING_SECONDS:-900}
     ports: ["127.0.0.1:8081:8081"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -47,6 +49,7 @@ services:
       MEA_JDBC_URL: jdbc:postgresql://postgres:5432/mea
       MEA_DB_USER: mea_owner
       MEA_DB_PASSWORD: ${LOCAL_DB_PASSWORD}
+      MEA_IDLE_SECONDS: ${LOCAL_IDLE_SECONDS:-1200}
     depends_on: [api,guacd]
   desktop:
     build:
@@ -64,6 +67,7 @@ services:
     environment:
       VITE_API_TARGET: http://api:8081
       VITE_GUAC_TARGET: http://guacamole:8080
+      VITE_POLLING: "true"
     depends_on: [api,guacamole]
 volumes:
   pgdata:

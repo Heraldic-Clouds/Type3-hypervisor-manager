@@ -21,11 +21,11 @@ cat > /usr/local/sbin/mea-session-monitor <<'MONITOR'
 # Root-owned backstop. The control-plane watchdog is authoritative; this
 # terminates the disposable machine if the desktop's actual X session is idle.
 set -euo pipefail
-idle=0
+idle_limit=$(cat /etc/mea/idle-ms 2>/dev/null || echo 1200000)
 for auth in /home/mea/.Xauthority; do
  for display in $(find /tmp/.X11-unix -maxdepth 1 -name 'X*' -printf '%f\n' 2>/dev/null | sed 's/^X/:/'); do
   value=$(runuser -u mea -- env DISPLAY="$display" XAUTHORITY="$auth" xprintidle 2>/dev/null || true)
-  if [[ "$value" =~ ^[0-9]+$ ]] && ((value>=1200000)); then shutdown -h now; fi
+  if [[ "$value" =~ ^[0-9]+$ ]] && ((value>=idle_limit)); then shutdown -h now; fi
  done
 done
 MONITOR

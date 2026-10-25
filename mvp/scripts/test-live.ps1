@@ -8,6 +8,7 @@ $config=aws lambda get-function-configuration --function-name mea-staging-migrat
 $create=@{FunctionName='mea-staging-verification-helper';Runtime='provided.al2023';Role=$config.Role;Handler='bootstrap';Timeout=30;MemorySize=256;VpcConfig=@{SubnetIds=$config.VpcConfig.SubnetIds;SecurityGroupIds=$config.VpcConfig.SecurityGroupIds};Environment=$config.Environment;Tags=@{Project='MiseEnAbyme';Purpose='temporary-verification'}}
 $create|ConvertTo-Json -Depth 10|Set-Content -LiteralPath build/dbops-config.json -Encoding utf8NoBOM
 $created=$false
+$originalProfile=$env:AWS_PROFILE
 try{
  aws lambda create-function --cli-input-json file://build/dbops-config.json --zip-file fileb://build/dbops.zip --profile $Profile --query FunctionName|Out-Null
  if($LASTEXITCODE -ne 0){throw 'Could not create temporary helper; existing helper was not changed'}
@@ -23,4 +24,5 @@ try{
 }finally{
  if($created){aws lambda delete-function --function-name mea-staging-verification-helper --profile $Profile|Out-Null}
  Remove-Item Env:MEA_LIVE_CONFIRM -ErrorAction SilentlyContinue
+ if($null -eq $originalProfile){Remove-Item Env:AWS_PROFILE -ErrorAction SilentlyContinue}else{$env:AWS_PROFILE=$originalProfile}
 }

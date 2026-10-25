@@ -11,6 +11,7 @@ import org.apache.guacamole.net.event.listener.Listener;
  * The bridge supplies identity, JDBC remains the connection permission registry.
  */
 public class Lifecycle implements Listener {
+ private final int idleSeconds=Integer.parseInt(System.getenv().getOrDefault("MEA_IDLE_SECONDS","1200"));
  private final ConcurrentMap<String,GuacamoleTunnel> tunnels=new ConcurrentHashMap<>();
  private final ScheduledExecutorService scheduler=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"mea-lease-watch");t.setDaemon(true);return t;});
  public Lifecycle(){scheduler.scheduleWithFixedDelay(this::check,5,5,TimeUnit.SECONDS);}
@@ -44,9 +45,9 @@ public class Lifecycle implements Listener {
    boolean allowed=false;
    try(Connection c=db();PreparedStatement p=c.prepareStatement(
     "SELECT 1 FROM mea.desktop_sessions ds JOIN mea.desktops d ON d.id=ds.desktop_id JOIN mea.sessions s ON s.hash=ds.web_session_hash JOIN mea.users u ON u.id=d.user_id "+
-    "WHERE ds.tunnel_id=? AND ds.closed_at IS NULL AND d.state='ready' AND d.expires_at>now() AND d.last_activity>now()-interval '20 minutes' "+
+    "WHERE ds.tunnel_id=? AND ds.closed_at IS NULL AND d.state='ready' AND d.expires_at>now() AND d.last_activity>now()-(? * interval '1 second') "+
     "AND (d.last_heartbeat IS NULL OR d.last_heartbeat>now()-interval '90 seconds') AND NOT u.disabled AND s.revoked_at IS NULL AND s.expires_at>now()")){
-    p.setString(1,entry.getKey());try(ResultSet rs=p.executeQuery()){allowed=rs.next();}
+    p.setString(1,entry.getKey());p.setInt(2,idleSeconds);try(ResultSet rs=p.executeQuery()){allowed=rs.next();}
    }catch(SQLException ignored){}
    if(!allowed){try{entry.getValue().close();}catch(GuacamoleException ignored){}tunnels.remove(entry.getKey());closeRecord(entry.getKey());}
   }

@@ -22,9 +22,9 @@ import (
 )
 
 type Config struct {
-	Origin, GuacKey                                 string
-	Secure, RequireVerification, Local              bool
-	Cap, IdleSeconds, GraceSeconds, LifetimeSeconds int
+	Origin, GuacKey                                                 string
+	Secure, RequireVerification, Local                              bool
+	Cap, IdleSeconds, WarningSeconds, GraceSeconds, LifetimeSeconds int
 }
 type Server struct {
 	Store  *store.Store
@@ -146,7 +146,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	switch path {
 	case "/api/me":
 		if r.Method == "GET" {
-			write(w, 200, map[string]any{"user": a.User, "csrf": a.CSRF, "idleSeconds": s.Config.IdleSeconds, "warningSeconds": s.Config.IdleSeconds - 300, "graceSeconds": s.Config.GraceSeconds})
+			write(w, 200, map[string]any{"user": a.User, "csrf": a.CSRF, "idleSeconds": s.Config.IdleSeconds, "warningSeconds": s.Config.WarningSeconds, "graceSeconds": s.Config.GraceSeconds})
 			return nil
 		}
 	case "/api/logout":

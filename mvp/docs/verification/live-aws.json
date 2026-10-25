@@ -1,106 +1,111 @@
 [
   {
     "step": "Identity mapping a",
-    "time": "2026-10-25T13:37:30.205Z",
-    "guacamoleUserId": 5,
-    "userId": "c231a43e-076f-451d-85b8-04b5eeb5343c"
+    "time": "2026-10-25T14:13:14.344Z",
+    "guacamoleUserId": 7,
+    "userId": "39eb06cc-f3b0-423d-b1c3-808cd2e056f4"
   },
   {
     "step": "Identity mapping b",
-    "time": "2026-10-25T13:37:32.937Z",
-    "guacamoleUserId": 6,
-    "userId": "c0ecf5d4-b320-4b13-8925-9c3a68761672"
+    "time": "2026-10-25T14:13:17.106Z",
+    "guacamoleUserId": 8,
+    "userId": "36002179-3795-4384-8589-8b3c7a861786"
   },
   {
     "step": "Concurrent create idempotency",
-    "time": "2026-10-25T13:37:33.677Z",
-    "desktopId": "693bd3b9-511d-44d8-84cc-8fb9c8116c00"
+    "time": "2026-10-25T14:13:17.805Z",
+    "desktopId": "6a1937e8-609e-4759-b122-5f48e3329118"
   },
   {
     "step": "Cross-user connect/activity/disconnect/destroy rejected",
-    "time": "2026-10-25T13:37:34.253Z"
+    "time": "2026-10-25T14:13:18.256Z"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:37:34.360Z",
+    "time": "2026-10-25T14:13:18.377Z",
     "state": "queued"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:38:05.337Z",
+    "time": "2026-10-25T14:13:49.197Z",
+    "state": "queued"
+  },
+  {
+    "step": "Provisioning progress",
+    "time": "2026-10-25T14:14:20.121Z",
     "state": "provisioning"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:38:36.242Z",
+    "time": "2026-10-25T14:14:51.043Z",
     "state": "provisioning"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:39:07.110Z",
+    "time": "2026-10-25T14:15:21.898Z",
     "state": "provisioning"
   },
   {
     "step": "Real golden-AMI EC2 ready",
-    "time": "2026-10-25T13:39:25.025Z",
-    "desktopId": "693bd3b9-511d-44d8-84cc-8fb9c8116c00",
-    "instanceId": "i-0412595dd052a62a1",
-    "volumeId": "vol-01e028f86b0b5dee1",
+    "time": "2026-10-25T14:15:34.706Z",
+    "desktopId": "6a1937e8-609e-4759-b122-5f48e3329118",
+    "instanceId": "i-0af9107bbaa82482c",
+    "volumeId": "vol-02a8177e43f7de0d1",
     "ami": "ami-0964ca3ff232953a2",
     "permissionCount": 1
   },
   {
     "step": "Ubuntu rendering, keyboard and mouse verified",
-    "time": "2026-10-25T13:40:14.180Z",
+    "time": "2026-10-25T14:16:32.445Z",
     "proof": "MEA_BROWSER_INPUT_OK"
   },
   {
     "step": "Responsive desktop resize verified",
-    "time": "2026-10-25T13:40:16.219Z"
+    "time": "2026-10-25T14:16:34.491Z"
   },
   {
     "step": "Disconnected and triggered server idle expiration",
-    "time": "2026-10-25T13:40:17.446Z"
+    "time": "2026-10-25T14:16:35.806Z"
   },
   {
     "step": "Automatic EC2 termination and EBS deletion verified",
-    "time": "2026-10-25T13:42:06.079Z",
-    "instanceId": "i-0412595dd052a62a1",
-    "volumeId": "vol-01e028f86b0b5dee1"
+    "time": "2026-10-25T14:18:06.670Z",
+    "instanceId": "i-0af9107bbaa82482c",
+    "volumeId": "vol-02a8177e43f7de0d1"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:42:06.364Z",
+    "time": "2026-10-25T14:18:06.940Z",
     "state": "queued"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:42:37.262Z",
+    "time": "2026-10-25T14:18:37.809Z",
     "state": "queued"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:43:08.222Z",
+    "time": "2026-10-25T14:19:08.636Z",
     "state": "provisioning"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:43:39.087Z",
+    "time": "2026-10-25T14:19:39.609Z",
     "state": "provisioning"
   },
   {
     "step": "Provisioning progress",
-    "time": "2026-10-25T13:44:10.021Z",
+    "time": "2026-10-25T14:20:10.451Z",
     "state": "provisioning"
   },
   {
     "step": "Fresh desktop provisioned and connected",
-    "time": "2026-10-25T13:45:23.301Z",
-    "desktopId": "e0c8e23b-0c18-4e7c-b86a-ad646e41f13d",
-    "instanceId": "i-0628727ed31e2714c"
+    "time": "2026-10-25T14:21:22.503Z",
+    "desktopId": "c09468bc-31d7-419b-a2a8-887e4459e154",
+    "instanceId": "i-00f73c2a52ed9fb33"
   },
   {
     "step": "Live acceptance workflow passed",
-    "time": "2026-10-25T13:45:23.521Z"
+    "time": "2026-10-25T14:21:22.673Z"
   }
 ]

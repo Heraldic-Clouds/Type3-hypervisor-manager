@@ -11,7 +11,7 @@ Golden image: ami-0964ca3ff232953a2.
 
 ## Performed against real AWS
 
-The final automated browser run passed at 2026-10-25 13:45:23 UTC.
+The final automated browser run passed at 2026-10-25 21:21:22 UTC.
 Complete timestamped evidence: verification/live-aws.json.
 
 - Registered two separate accounts through the deployed React website.
@@ -21,16 +21,16 @@ Complete timestamped evidence: verification/live-aws.json.
 - Confirmed concurrent create requests returned one desktop UUID.
 - Confirmed User B received 404 for User A's connect, activity, disconnect and
   destroy endpoints.
-- Provisioned EC2 i-0412595dd052a62a1 from the golden AMI; one JDBC READ permission.
+- Provisioned EC2 i-0af9107bbaa82482c from the golden AMI; one JDBC READ permission.
 - Displayed a real Ubuntu XFCE desktop through Guacamole WebSocket inside MEA.
 - Sent mouse and keyboard events; terminal input created
   /home/mea/mea-browser-proof.txt. SSM read it back as MEA_BROWSER_INPUT_OK.
 - Resized the browser desktop and captured the result.
 - Disconnected, advanced the test desktop's server idle timestamp, and allowed
   the normal watchdog to reconcile it.
-- Verified EC2 termination and deletion of EBS vol-01e028f86b0b5dee1.
-- Provisioned a fresh desktop e0c8e23b-0c18-4e7c-b86a-ad646e41f13d on a different
-  instance i-0628727ed31e2714c, rendered it, and connected successfully.
+- Verified EC2 termination and deletion of EBS vol-02a8177e43f7de0d1.
+- Provisioned a fresh desktop c09468bc-31d7-419b-a2a8-887e4459e154 on a different
+  instance i-00f73c2a52ed9fb33, rendered it, and connected successfully.
 - Deactivated test accounts and verified no running/shutting-down desktops,
   no remaining desktop EBS volumes and no desktop credential secrets.
 - Deleted the temporary verification-helper Lambda.
@@ -55,6 +55,10 @@ Screenshots: verification/ubuntu-desktop.png and verification/fresh-desktop.png.
 - React TypeScript/Vite build passed; npm audit reported zero vulnerabilities.
 - Terraform and Packer configurations validated.
 - PowerShell deployment/teardown scripts parsed successfully.
+- A separate local run with real 45-second warning and 60-second idle values
+  verified that API policy, browser warning/expiry and Guacamole's interval query
+  follow configuration. See verification/timeout-policy.json. Docker frontend
+  file polling is enabled for reliable updates on Windows bind mounts.
 
 See verification/go-tests.txt for the saved Go results. Both GitHub Actions
 workflows also passed: backend run 40199358243 and frontend run 40199643505.
