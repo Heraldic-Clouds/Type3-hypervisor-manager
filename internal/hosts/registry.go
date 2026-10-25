@@ -37,6 +37,8 @@ type HostRegistry interface {
 	Resources(ctx context.Context, id string) (HostResources, error)
 	Select(ctx context.Context, req PlacementRequest) (model.Host, error)
 	CheckPlacement(ctx context.Context, hostID string, req PlacementRequest) (model.Host, error)
+	// ReportFailure records that a call to the host failed in transport.
+	ReportFailure(ctx context.Context, id string, err error)
 }
 
 // ResourceMonitor reports host health and resource inventory.

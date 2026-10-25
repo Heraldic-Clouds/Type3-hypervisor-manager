@@ -47,8 +47,9 @@ type Inventory struct {
 	Total  int    `json:"total"`
 	Nvidia int    `json:"nvidia"`
 	// NvidiaDriverReady is true when at least one NVIDIA card is bound to the
-	// proprietary "nvidia" kernel driver (nouveau or vfio cannot be shared
-	// into containers with the NVIDIA runtime).
+	// proprietary "nvidia" kernel driver and LXD could read its NVIDIA
+	// details (nouveau- or vfio-bound cards cannot be shared into containers
+	// with the NVIDIA runtime).
 	NvidiaDriverReady bool `json:"nvidia_driver_ready"`
 }
 
@@ -78,7 +79,7 @@ func FromResources(r *api.Resources) Inventory {
 		inv.Cards = append(inv.Cards, card)
 		if card.VendorID == NvidiaVendorID {
 			inv.Nvidia++
-			if card.Driver == "nvidia" {
+			if card.Driver == "nvidia" && card.Nvidia != nil {
 				inv.NvidiaDriverReady = true
 			}
 		}

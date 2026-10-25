@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -23,7 +24,7 @@ import (
 )
 
 // ErrUnreachable simulates a host that cannot be contacted.
-var ErrUnreachable = errors.New("fake lxd: connection refused")
+var ErrUnreachable error = &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fake lxd: connection refused")}
 
 // Server is a fake LXD daemon. Exported fields may be changed by tests while
 // holding no lock only before the server is shared; use the setters after.

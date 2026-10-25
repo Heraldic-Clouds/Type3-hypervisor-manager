@@ -7,7 +7,9 @@ package lxdclient
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/canonical/lxd/shared/api"
@@ -70,3 +72,19 @@ var ErrOperationTimeout = errors.New("lxd operation did not finish before the de
 
 // PollInterval is how often Wait refreshes an operation.
 var PollInterval = 750 * time.Millisecond
+
+// IsTransport reports whether err means the LXD daemon could not be reached
+// (as opposed to LXD answering with an error).
+func IsTransport(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se api.StatusError
+	if errors.As(err, &se) {
+		return false
+	}
+	var ue *url.Error
+	var ne net.Error
+	var oe *net.OpError
+	return errors.As(err, &ue) || errors.As(err, &ne) || errors.As(err, &oe)
+}
