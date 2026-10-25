@@ -1,0 +1,30 @@
+# LXD host preseed for a Mise En Abyme container host (Ubuntu 24.04, LXD snap).
+#   sudo snap install lxd --channel=5.21/stable
+#   sed "s/LISTEN_ADDR/10.0.0.5/" host-preseed.yaml | sudo lxd init --preseed
+# Bind core.https_address to a PRIVATE address only (VPC/VPN). Type3 refuses
+# public endpoints by default; the LXD API must never be reachable from the internet.
+config:
+  core.https_address: LISTEN_ADDR:8443
+networks:
+  - name: lxdbr0
+    type: bridge
+    config:
+      ipv4.address: 10.64.0.1/16
+      ipv4.nat: "true"
+      ipv6.address: none
+storage_pools:
+  - name: default
+    driver: zfs
+    config:
+      size: 200GiB
+profiles:
+  - name: default
+    devices:
+      root:
+        type: disk
+        path: /
+        pool: default
+      eth0:
+        type: nic
+        name: eth0
+        network: lxdbr0

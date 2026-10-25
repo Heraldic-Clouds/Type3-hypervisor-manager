@@ -1,0 +1,24 @@
+#cloud-config
+# Reproducible Mise En Abyme base layer applied on top of ubuntu:24.04 before
+# publishing it as the mea-base-24.04 image. Customer accounts are NOT created
+# here; Type3 adds them per container through cloud-init.user-data.
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - openssh-server
+  - unattended-upgrades
+  - xauth
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-mea.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      KbdInteractiveAuthentication no
+  - path: /etc/mea-base-release
+    content: |
+      MEA_BASE=24.04
+runcmd:
+  - [systemctl, enable, --now, unattended-upgrades]
+  - [passwd, -l, root]
