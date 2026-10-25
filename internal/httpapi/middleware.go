@@ -17,6 +17,12 @@ import (
 
 type ridKey struct{}
 
+type actorKey struct{}
+
+// actorSlot lets the auth middleware report the caller to the outer logging
+// middleware, which only sees the original request.
+type actorSlot struct{ name string }
+
 var requestIDRe = regexp.MustCompile(`^[A-Za-z0-9._-]{8,64}$`)
 
 func requestIDFrom(ctx context.Context) string {
@@ -34,7 +40,9 @@ func requestID(next http.Handler) http.Handler {
 			id = "req-" + hex.EncodeToString(b)
 		}
 		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ridKey{}, id)))
+		ctx := context.WithValue(r.Context(), ridKey{}, id)
+		ctx = context.WithValue(ctx, actorKey{}, &actorSlot{})
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -106,8 +114,8 @@ func (a *API) observe(next http.Handler) http.Handler {
 		a.d.Metrics.Inc("type3_http_requests_total", "HTTP requests by route and status code.",
 			map[string]string{"route": pattern, "code": strconv.Itoa(sw.status)})
 		actor := ""
-		if p, ok := auth.FromContext(r.Context()); ok {
-			actor = p.Name
+		if slot, ok := r.Context().Value(actorKey{}).(*actorSlot); ok {
+			actor = slot.name
 		}
 		a.d.Log.Info("http request", "method", r.Method, "route", pattern, "path", r.URL.Path,
 			"status", sw.status, "duration_ms", time.Since(start).Milliseconds(), "actor", actor,
@@ -130,7 +138,7 @@ func (a *API) authenticate(min auth.Role, next http.HandlerFunc) http.Handler {
 		if !ok {
 			a.d.Metrics.Inc("type3_auth_failures_total", "Rejected API requests by reason.", map[string]string{"reason": "unauthenticated"})
 			a.d.Audit.Record(r.Context(), audit.Event{
-				Action: r.Method + " " + r.Pattern, Outcome: "denied", Error: "unauthenticated",
+				Action: r.Pattern, Outcome: "denied", Error: "unauthenticated",
 				RequestID: requestIDFrom(r.Context()), RemoteAddr: remoteIP(r),
 			})
 			w.Header().Set("WWW-Authenticate", `Bearer realm="type3"`)
@@ -140,11 +148,14 @@ func (a *API) authenticate(min auth.Role, next http.HandlerFunc) http.Handler {
 		if p.Role < min {
 			a.d.Metrics.Inc("type3_auth_failures_total", "Rejected API requests by reason.", map[string]string{"reason": "forbidden"})
 			a.d.Audit.Record(r.Context(), audit.Event{
-				Actor: p.Name, Role: p.Role.String(), Action: r.Method + " " + r.Pattern, Outcome: "denied",
+				Actor: p.Name, Role: p.Role.String(), Action: r.Pattern, Outcome: "denied",
 				Error: "requires " + min.String(), RequestID: requestIDFrom(r.Context()), RemoteAddr: remoteIP(r),
 			})
 			writeError(w, r, errs.New(errs.KindForbidden, "forbidden", "this action requires the %s role", min))
 			return
+		}
+		if slot, ok := r.Context().Value(actorKey{}).(*actorSlot); ok {
+			slot.name = p.Name
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})

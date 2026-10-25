@@ -1,0 +1,5 @@
+[
+  {"name": "admin", "role": "admin", "sha256": "replace-with-output-of-type3-gen-key"},
+  {"name": "orchestrator", "role": "operator", "sha256": "replace-with-output-of-type3-gen-key"},
+  {"name": "dashboard", "role": "viewer", "sha256": "replace-with-output-of-type3-gen-key"}
+]

@@ -175,7 +175,7 @@ func serve() error {
 		AllowPublicEndpoints: cfg.AllowPublicEndpoints, AllowUnixSocket: cfg.AllowUnixSocket,
 		DefaultNetwork: cfg.DefaultNetwork, DefaultStoragePool: cfg.DefaultStoragePool,
 		CPUOvercommit: cfg.CPUOvercommit, MemoryOvercommit: cfg.MemoryOvercommit,
-		UserAgent: version.UserAgent(),
+		MaxContainersPerGPU: cfg.MaxContainersPerGPU, UserAgent: version.UserAgent(),
 	}, log)
 	defer reg.Close()
 
@@ -265,7 +265,7 @@ func serve() error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("type3 listening", "addr", cfg.ListenAddr, "tls", cfg.TLSCertFile != "", "version", version.Version,
-			"api_keys", authn.Count(), "tiers", catalog.Names())
+			"key_count", authn.Count(), "tiers", catalog.Names())
 		var err error
 		if cfg.TLSCertFile != "" {
 			err = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)

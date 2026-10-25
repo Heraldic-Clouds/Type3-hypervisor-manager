@@ -1,0 +1,619 @@
+openapi: 3.1.0
+info:
+  title: Type3 LXD Management API
+  version: 1.0.0
+  description: |
+    Internal administrative API of the Mise En Abyme container engine. Type3
+    manages unprivileged LXD system containers across registered LXD hosts.
+
+    * Every endpoint except `GET /api/v1/health` needs `Authorization: Bearer <api key>`.
+    * Roles: `viewer` (read), `operator` (container lifecycle), `admin` (hosts,
+      images, reconciliation, forced stop/delete, image overrides).
+    * Long-running work returns `202 Accepted` with an `operation`; poll
+      `GET /api/v1/operations/{id}` (also in the `Location` header).
+    * Write endpoints accept an optional `Idempotency-Key` header; repeating a
+      request with the same key returns the original result instead of
+      repeating the work.
+    * Errors always use the `Error` schema.
+servers:
+  - url: http://127.0.0.1:8080
+security:
+  - apiKey: []
+tags:
+  - name: monitoring
+  - name: hosts
+  - name: containers
+  - name: images
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [monitoring]
+      summary: Liveness and summary (no authentication)
+      security: []
+      responses:
+        "200": {description: Healthy, content: {application/json: {schema: {$ref: "#/components/schemas/Health"}}}}
+        "503": {description: Unhealthy, content: {application/json: {schema: {$ref: "#/components/schemas/Health"}}}}
+  /api/v1/metrics:
+    get:
+      tags: [monitoring]
+      summary: Prometheus metrics (viewer)
+      responses:
+        "200": {description: Prometheus text format, content: {text/plain: {schema: {type: string}}}}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/operations:
+    get:
+      tags: [monitoring]
+      summary: List recent operations (viewer)
+      parameters:
+        - {name: resource_type, in: query, schema: {type: string, enum: [container, image]}}
+        - {name: resource_id, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/OperationStatus"}}
+      responses:
+        "200":
+          description: Operations, newest first (max 200)
+          content: {application/json: {schema: {type: object, properties: {operations: {type: array, items: {$ref: "#/components/schemas/Operation"}}}}}}
+  /api/v1/operations/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      tags: [monitoring]
+      summary: Operation status and progress (viewer)
+      responses:
+        "200": {description: Operation, content: {application/json: {schema: {$ref: "#/components/schemas/Operation"}}}}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [monitoring]
+      summary: Cancel a running operation (operator)
+      responses:
+        "202": {description: Cancellation requested, content: {application/json: {schema: {$ref: "#/components/schemas/Operation"}}}}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/profiles:
+    get:
+      tags: [monitoring]
+      summary: Subscription tier profiles (viewer)
+      responses:
+        "200":
+          description: Tiers
+          content: {application/json: {schema: {type: object, properties: {profiles: {type: array, items: {$ref: "#/components/schemas/Tier"}}}}}}
+
+  /api/v1/hosts:
+    post:
+      tags: [hosts]
+      summary: Register an LXD host (admin)
+      description: |
+        Type3 connects with its client certificate (mTLS) and the pinned server
+        certificate, probes the host and discovers its resources before saving.
+        Endpoints resolving to public IPs are rejected unless
+        TYPE3_ALLOW_PUBLIC_LXD_ENDPOINTS=true.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/RegisterHost"}}}
+      responses:
+        "201": {description: Registered, content: {application/json: {schema: {$ref: "#/components/schemas/Host"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    get:
+      tags: [hosts]
+      summary: List hosts (viewer)
+      responses:
+        "200":
+          description: Hosts
+          content: {application/json: {schema: {type: object, properties: {hosts: {type: array, items: {$ref: "#/components/schemas/Host"}}}}}}
+  /api/v1/hosts/{id}:
+    parameters: [{$ref: "#/components/parameters/HostID"}]
+    get:
+      tags: [hosts]
+      summary: Host details (viewer)
+      responses:
+        "200": {description: Host, content: {application/json: {schema: {$ref: "#/components/schemas/Host"}}}}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [hosts]
+      summary: Unregister a host (admin)
+      description: Refused while Type3 manages containers on the host. `force=true` forgets those records; it never deletes LXD instances.
+      parameters: [{name: force, in: query, schema: {type: boolean, default: false}}]
+      responses:
+        "200": {description: Unregistered, content: {application/json: {schema: {type: object, properties: {id: {type: string}, unregistered: {type: boolean}, forgotten_containers: {type: integer}}}}}}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/hosts/{id}/resources:
+    parameters: [{$ref: "#/components/parameters/HostID"}]
+    get:
+      tags: [hosts]
+      summary: Live CPU, memory, storage, network and GPU inventory (viewer)
+      responses:
+        "200": {description: Resources, content: {application/json: {schema: {$ref: "#/components/schemas/HostResources"}}}}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/v1/hosts/{id}/health:
+    parameters: [{$ref: "#/components/parameters/HostID"}]
+    get:
+      tags: [hosts]
+      summary: Probe the host now (viewer)
+      responses:
+        "200": {description: Online or degraded, content: {application/json: {schema: {$ref: "#/components/schemas/HostHealth"}}}}
+        "503": {description: Offline, content: {application/json: {schema: {$ref: "#/components/schemas/HostHealth"}}}}
+  /api/v1/hosts/{id}/containers:
+    parameters: [{$ref: "#/components/parameters/HostID"}]
+    get:
+      tags: [hosts]
+      summary: Container inventory on a host (viewer)
+      responses:
+        "200":
+          description: Managed records and unmanaged LXD instances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  host_id: {type: string}
+                  managed: {type: array, items: {$ref: "#/components/schemas/Container"}}
+                  unmanaged: {type: array, items: {type: object, properties: {name: {type: string}, status: {type: string}}}}
+                  stale: {type: boolean}
+  /api/v1/hosts/{id}/reconcile:
+    parameters: [{$ref: "#/components/parameters/HostID"}]
+    post:
+      tags: [hosts]
+      summary: Reconcile records with LXD state now (admin)
+      responses:
+        "200": {description: Report, content: {application/json: {schema: {$ref: "#/components/schemas/ReconcileReport"}}}}
+        "503": {$ref: "#/components/responses/Error"}
+
+  /api/v1/containers:
+    post:
+      tags: [containers]
+      summary: Create a container from a tier profile (operator)
+      description: |
+        Resources are validated against the server-side tier; omitted values
+        use tier defaults. Without `host_id` a host is chosen automatically
+        (online, enough capacity, GPU only for GPU tiers). Repeating an
+        identical request (same name and spec, or same Idempotency-Key)
+        returns `200` with `existing: true` and creates nothing.
+      parameters: [{$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreateContainer"}}}
+      responses:
+        "202": {description: Creation started, content: {application/json: {schema: {$ref: "#/components/schemas/CreateResult"}}}}
+        "200": {description: Identical request already accepted, content: {application/json: {schema: {$ref: "#/components/schemas/CreateResult"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    get:
+      tags: [containers]
+      summary: List containers (viewer)
+      parameters:
+        - {name: host_id, in: query, schema: {type: string}}
+        - {name: owner_id, in: query, schema: {type: string}}
+        - {name: tier, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Containers
+          content: {application/json: {schema: {type: object, properties: {containers: {type: array, items: {$ref: "#/components/schemas/Container"}}}}}}
+  /api/v1/containers/{id}:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}]
+    get:
+      tags: [containers]
+      summary: Container details (viewer)
+      parameters: [{name: live, in: query, description: Refresh state and IPs from LXD, schema: {type: boolean, default: true}}]
+      responses:
+        "200": {description: Container, content: {application/json: {schema: {$ref: "#/components/schemas/ContainerView"}}}}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [containers]
+      summary: Delete a container (operator; force requires admin)
+      parameters:
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+        - {name: force, in: query, schema: {type: boolean}}
+        - {name: reason, in: query, schema: {type: string}}
+      requestBody:
+        content: {application/json: {schema: {$ref: "#/components/schemas/DeleteContainer"}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/containers/{id}/start:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+    post:
+      tags: [containers]
+      summary: Start (operator). Starting a running container succeeds.
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/containers/{id}/stop:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+    post:
+      tags: [containers]
+      summary: Graceful stop (operator); forced stop requires admin and a reason
+      requestBody:
+        content: {application/json: {schema: {$ref: "#/components/schemas/StopContainer"}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /api/v1/containers/{id}/restart:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+    post:
+      tags: [containers]
+      summary: Restart (operator); starts a stopped container
+      requestBody:
+        content: {application/json: {schema: {$ref: "#/components/schemas/StopContainer"}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+  /api/v1/containers/{id}/resources:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+    patch:
+      tags: [containers]
+      summary: Change CPU, memory or disk within tier bounds (operator)
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ResourceRequest"}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/containers/{id}/snapshots:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}]
+    get:
+      tags: [containers]
+      summary: List snapshots (viewer)
+      responses:
+        "200":
+          description: Snapshots
+          content: {application/json: {schema: {type: object, properties: {snapshots: {type: array, items: {$ref: "#/components/schemas/Snapshot"}}}}}}
+    post:
+      tags: [containers]
+      summary: Create a snapshot (operator)
+      parameters: [{$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody:
+        content: {application/json: {schema: {type: object, properties: {name: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"}}}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+  /api/v1/containers/{id}/snapshots/{snapshot}/restore:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {name: snapshot, in: path, required: true, schema: {type: string}}, {$ref: "#/components/parameters/IdempotencyKey"}]
+    post:
+      tags: [containers]
+      summary: Restore a snapshot (operator)
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+  /api/v1/containers/{id}/snapshots/{snapshot}:
+    parameters: [{$ref: "#/components/parameters/ContainerID"}, {name: snapshot, in: path, required: true, schema: {type: string}}]
+    delete:
+      tags: [containers]
+      summary: Delete a snapshot (operator)
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+
+  /api/v1/images:
+    get:
+      tags: [images]
+      summary: Local images on one host or all hosts (viewer)
+      parameters: [{name: host_id, in: query, schema: {type: string}}]
+      responses:
+        "200":
+          description: Images
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images: {type: array, items: {$ref: "#/components/schemas/Image"}}
+                  unavailable_hosts: {type: array, items: {type: string}}
+  /api/v1/images/remote:
+    get:
+      tags: [images]
+      summary: Container images offered by a configured image server (viewer)
+      parameters:
+        - {name: server, in: query, schema: {type: string, default: ubuntu}}
+        - {name: q, in: query, description: Substring filter on aliases/description, schema: {type: string}}
+      responses:
+        "200": {description: Remote images, content: {application/json: {schema: {type: object}}}}
+  /api/v1/images/import:
+    post:
+      tags: [images]
+      summary: Pull an image onto a host, verifying its fingerprint (admin)
+      parameters: [{$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ImportImage"}}}
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/images/{id}:
+    parameters:
+      - {name: id, in: path, required: true, description: Image fingerprint (>= 12 hex chars), schema: {type: string}}
+      - {name: host_id, in: query, required: true, schema: {type: string}}
+      - {name: force, in: query, description: Delete even if instances use it as base, schema: {type: boolean}}
+    delete:
+      tags: [images]
+      summary: Delete an image from a host (admin)
+      responses:
+        "202": {$ref: "#/components/responses/Accepted"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+
+components:
+  securitySchemes:
+    apiKey: {type: http, scheme: bearer, description: "Type3 API key (`type3 gen-key`). X-API-Key header also accepted."}
+  parameters:
+    HostID: {name: id, in: path, required: true, schema: {type: string, pattern: "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"}}
+    ContainerID: {name: id, in: path, required: true, schema: {type: string, pattern: "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, schema: {type: string, pattern: "^[A-Za-z0-9._:-]{8,128}$"}}
+  responses:
+    Error:
+      description: Error
+      content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+    Accepted:
+      description: Operation started; poll the Location header
+      headers: {Location: {schema: {type: string}}}
+      content: {application/json: {schema: {type: object, properties: {operation: {$ref: "#/components/schemas/Operation"}}}}}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string, examples: [container_not_found, gpu_not_allowed, resource_limit_exceeded, host_unavailable, operation_in_progress]}
+            message: {type: string}
+            details: {type: object}
+            request_id: {type: string}
+    Health:
+      type: object
+      properties:
+        status: {type: string, enum: [ok, unhealthy]}
+        version: {type: string}
+        checks: {type: object, additionalProperties: {type: string}}
+        hosts: {type: object, additionalProperties: {type: integer}}
+        time: {type: string, format: date-time}
+    OperationStatus: {type: string, enum: [pending, running, succeeded, failed, cancelled]}
+    Operation:
+      type: object
+      properties:
+        id: {type: string}
+        type: {type: string, examples: [container.create, container.stop, image.import]}
+        status: {$ref: "#/components/schemas/OperationStatus"}
+        resource_type: {type: string}
+        resource_id: {type: string}
+        host_id: {type: string}
+        actor: {type: string}
+        stage: {type: string}
+        progress: {type: integer, description: "0-100, or -1 when unknown"}
+        progress_detail: {type: string}
+        lxd_operation: {type: string}
+        error_code: {type: string}
+        error_message: {type: string}
+        result: {type: object}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    Resources:
+      type: object
+      properties:
+        cpu: {type: integer}
+        memory_mib: {type: integer}
+        disk_gib: {type: integer}
+    ResourceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        cpu: {type: integer}
+        memory_mib: {type: integer}
+        disk_gib: {type: integer, description: Can only grow}
+    Tier:
+      type: object
+      properties:
+        name: {type: string, examples: [newbie, power, eleet]}
+        description: {type: string}
+        defaults: {$ref: "#/components/schemas/Resources"}
+        min: {$ref: "#/components/schemas/Resources"}
+        max: {$ref: "#/components/schemas/Resources"}
+        gpu: {type: boolean}
+        root_access: {type: boolean, description: sudo inside the unprivileged container}
+        ephemeral: {type: boolean}
+        persistent_storage: {type: string, enum: [none, local, efs]}
+        image: {$ref: "#/components/schemas/ImageRef"}
+        lxd_profiles: {type: array, items: {type: string}}
+        process_limit: {type: integer}
+    ImageRef:
+      type: object
+      properties:
+        server: {type: string, description: Configured image server name; empty = image already on the host}
+        alias: {type: string}
+        fingerprint: {type: string}
+    RegisterHost:
+      type: object
+      required: [name, endpoint]
+      additionalProperties: false
+      properties:
+        name: {type: string, pattern: "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"}
+        endpoint: {type: string, examples: ["https://10.0.0.5:8443", "unix:///var/snap/lxd/common/lxd/unix.socket"]}
+        project: {type: string, default: default}
+        server_cert: {type: string, description: PEM of the LXD server certificate (pinned). Required for https unless a CA is configured.}
+        client_cert_ref: {type: string, description: Optional per-host client cert reference (path, file://, env://, s3://). Never PEM contents.}
+        client_key_ref: {type: string}
+        provider: {type: string, default: static}
+        provider_ref: {type: string}
+        labels: {type: object, additionalProperties: {type: string}}
+        default_network: {type: string}
+        default_storage_pool: {type: string}
+        schedulable: {type: boolean, default: true}
+        allow_offline: {type: boolean, default: false}
+    Host:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        endpoint: {type: string}
+        project: {type: string}
+        server_cert_fingerprint: {type: string}
+        provider: {type: string}
+        provider_ref: {type: string}
+        labels: {type: object}
+        default_network: {type: string}
+        default_storage_pool: {type: string}
+        schedulable: {type: boolean}
+        status: {type: string, enum: [unknown, online, degraded, offline]}
+        status_reason: {type: string}
+        last_error: {type: string}
+        last_seen_at: {type: string, format: date-time}
+        consecutive_failures: {type: integer}
+        latency_ms: {type: integer}
+        server_version: {type: string}
+        clustered: {type: boolean}
+        cluster_members: {type: array, items: {type: string}}
+        capacity:
+          type: object
+          properties:
+            cpu_threads: {type: integer}
+            memory_bytes: {type: integer}
+            gpus: {type: integer}
+            nvidia_gpus: {type: integer}
+    HostHealth:
+      type: object
+      properties:
+        host_id: {type: string}
+        status: {type: string}
+        reason: {type: string}
+        latency_ms: {type: integer}
+        checked_at: {type: string, format: date-time}
+        consecutive_failures: {type: integer}
+        checks: {type: array, items: {type: object, properties: {name: {type: string}, ok: {type: boolean}, detail: {type: string}}}}
+        error: {type: string}
+    HostResources:
+      type: object
+      properties:
+        host_id: {type: string}
+        cpu: {type: object, properties: {architecture: {type: string}, threads: {type: integer}, sockets: {type: integer}, models: {type: array, items: {type: string}}}}
+        memory: {type: object, properties: {total_bytes: {type: integer}, used_bytes: {type: integer}}}
+        storage: {type: array, items: {type: object, properties: {name: {type: string}, driver: {type: string}, total_bytes: {type: integer}, used_bytes: {type: integer}}}}
+        networks: {type: array, items: {type: object, properties: {name: {type: string}, type: {type: string}, managed: {type: boolean}}}}
+        gpu:
+          type: object
+          properties:
+            total: {type: integer}
+            nvidia: {type: integer}
+            nvidia_driver_ready: {type: boolean}
+            cards:
+              type: array
+              items:
+                type: object
+                properties:
+                  vendor: {type: string}
+                  vendor_id: {type: string}
+                  product: {type: string}
+                  driver: {type: string}
+                  driver_version: {type: string}
+                  pci_address: {type: string}
+                  nvidia: {type: object, properties: {model: {type: string}, uuid: {type: string}, cuda_version: {type: string}, driver_version: {type: string}}}
+        gpu_capable: {type: boolean}
+        allocated: {type: object, properties: {containers: {type: integer}, cpu: {type: integer}, memory_mib: {type: integer}, disk_gib: {type: integer}, gpu_containers: {type: integer}}}
+        allocatable: {type: object, properties: {cpu: {type: number}, memory_mib: {type: integer}, gpu_containers: {type: integer}}}
+    CreateContainer:
+      type: object
+      required: [name, owner_id, tier]
+      additionalProperties: false
+      properties:
+        name: {type: string, pattern: "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"}
+        owner_id: {type: string}
+        tier: {type: string, examples: [newbie, power, eleet]}
+        host_id: {type: string, description: Explicit placement; omit for automatic}
+        resources: {$ref: "#/components/schemas/ResourceRequest"}
+        image: {$ref: "#/components/schemas/ImageRef", description: Admin only; defaults to the tier image}
+        network: {type: string}
+        storage_pool: {type: string}
+        gpu: {type: boolean, description: "true on a non-GPU tier is refused (403 gpu_not_allowed)"}
+        ssh_authorized_keys: {type: array, items: {type: string}}
+        start: {type: boolean, default: true}
+    CreateResult:
+      type: object
+      properties:
+        container: {$ref: "#/components/schemas/Container"}
+        operation: {$ref: "#/components/schemas/Operation"}
+        existing: {type: boolean}
+    StopContainer:
+      type: object
+      additionalProperties: false
+      properties:
+        force: {type: boolean, description: Admin only; kill if graceful shutdown fails}
+        reason: {type: string, description: Required with force; audit-logged}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 600}
+    DeleteContainer:
+      type: object
+      additionalProperties: false
+      properties:
+        force: {type: boolean, description: Admin only; stop a running container first}
+        reason: {type: string}
+    Container:
+      type: object
+      properties:
+        id: {type: string}
+        host_id: {type: string}
+        owner_id: {type: string}
+        tier: {type: string}
+        image: {$ref: "#/components/schemas/ImageRef"}
+        resources: {$ref: "#/components/schemas/Resources"}
+        gpu: {type: boolean}
+        root_access: {type: boolean}
+        ephemeral: {type: boolean}
+        network: {type: string}
+        storage_pool: {type: string}
+        profiles: {type: array, items: {type: string}}
+        status: {type: string, enum: [pending, creating, stopped, starting, running, stopping, restarting, frozen, deleting, error, missing, unknown]}
+        lxd_status: {type: string}
+        ipv4: {type: array, items: {type: string}}
+        ipv6: {type: array, items: {type: string}}
+        error: {type: string}
+        orphaned: {type: boolean}
+        last_operation_id: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ContainerView:
+      allOf:
+        - {$ref: "#/components/schemas/Container"}
+        - type: object
+          properties:
+            stale: {type: boolean, description: Host unreachable; recorded state shown}
+            active_operation: {$ref: "#/components/schemas/Operation"}
+    Snapshot:
+      type: object
+      properties:
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        stateful: {type: boolean}
+        size_bytes: {type: integer}
+    ReconcileReport:
+      type: object
+      properties:
+        host_id: {type: string}
+        checked: {type: integer}
+        updated: {type: array, items: {type: string}}
+        missing: {type: array, items: {type: string}}
+        removed: {type: array, items: {type: string}}
+        adopted: {type: array, items: {type: string}}
+        conflicts: {type: array, items: {type: string}}
+        skipped_busy: {type: array, items: {type: string}}
+    Image:
+      type: object
+      properties:
+        host_id: {type: string}
+        fingerprint: {type: string}
+        aliases: {type: array, items: {type: string}}
+        architecture: {type: string}
+        type: {type: string}
+        size_bytes: {type: integer}
+    ImportImage:
+      type: object
+      required: [host_id]
+      additionalProperties: false
+      properties:
+        host_id: {type: string}
+        server: {type: string, default: ubuntu}
+        alias: {type: string, description: Remote alias, e.g. 24.04 (set alias or fingerprint)}
+        fingerprint: {type: string}
+        aliases: {type: array, items: {type: string}, description: Local aliases to create (required when importing by alias)}
+        expected_fingerprint: {type: string, description: Import is rolled back if the result does not match}
+        auto_update: {type: boolean}

@@ -51,6 +51,7 @@ type Config struct {
 	DefaultStoragePool    string
 	CPUOvercommit         float64
 	MemoryOvercommit      float64
+	MaxContainersPerGPU   int
 	ImageServers          map[string]ImageServer
 	DefaultImageServer    string
 	AWSRegion             string
@@ -106,6 +107,7 @@ func Load(dotenvPath string) (*Config, error) {
 		DefaultStoragePool:    e.str("TYPE3_DEFAULT_STORAGE_POOL", "default"),
 		CPUOvercommit:         e.float("TYPE3_CPU_OVERCOMMIT", 4.0),
 		MemoryOvercommit:      e.float("TYPE3_MEMORY_OVERCOMMIT", 1.0),
+		MaxContainersPerGPU:   e.int("TYPE3_MAX_CONTAINERS_PER_GPU", 4),
 		DefaultImageServer:    e.str("TYPE3_DEFAULT_IMAGE_SERVER", "ubuntu"),
 		AWSRegion:             e.str("AWS_REGION", ""),
 		IdmapIsolated:         e.bool("TYPE3_IDMAP_ISOLATED", true),
@@ -168,6 +170,9 @@ func (c *Config) validate() error {
 	}
 	if c.HostFailureThreshold < 1 {
 		errs = append(errs, errors.New("TYPE3_HOST_FAILURE_THRESHOLD must be >= 1"))
+	}
+	if c.MaxContainersPerGPU < 1 {
+		errs = append(errs, errors.New("TYPE3_MAX_CONTAINERS_PER_GPU must be >= 1"))
 	}
 	if c.CPUOvercommit <= 0 || c.MemoryOvercommit <= 0 {
 		errs = append(errs, errors.New("overcommit ratios must be positive"))
