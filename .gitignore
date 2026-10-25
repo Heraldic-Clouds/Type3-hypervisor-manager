@@ -1,0 +1,11 @@
+mvp/.env
+mvp/.env.*.local
+mvp/build/
+mvp/infra/.terraform/
+mvp/infra/*.tfstate*
+mvp/infra/*.tfplan
+mvp/infra/*.auto.tfvars
+mvp/infra/crash.log
+mvp/packer/manifest.json
+mvp/test-results/
+*.zip
