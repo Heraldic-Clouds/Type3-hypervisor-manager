@@ -322,6 +322,13 @@ func (c *Connector) Add(endpoint string, s *Server) {
 	c.servers[endpoint] = s
 }
 
+// ConnectCount returns how many successful connections endpoint received.
+func (c *Connector) ConnectCount(endpoint string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Connects[endpoint]
+}
+
 // Connect implements lxdclient.Connector.
 func (c *Connector) Connect(_ context.Context, t lxdclient.Target) (lxdclient.Server, error) {
 	c.mu.Lock()
