@@ -45,4 +45,3 @@ try{
  aws cloudfront create-invalidation --distribution-id E2TESIQ92T6R7X --paths /index.html / --profile stratus2-tantalus --query Invalidation.Id
 }finally{Pop-Location}
 Write-Host 'Deployed https://miseenaby.me'
-

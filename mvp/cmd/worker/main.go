@@ -32,7 +32,9 @@ type worker struct {
 	sfn    *sfn.Client
 	ses    *sesv2.Client
 }
-type invokeAPI interface { Invoke(context.Context,*lambda.InvokeInput,...func(*lambda.Options))(*lambda.InvokeOutput,error) }
+type invokeAPI interface {
+	Invoke(context.Context, *lambda.InvokeInput, ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
+}
 
 func (w *worker) db(ctx context.Context, r control.Request) (control.Result, error) {
 	b, _ := json.Marshal(r)

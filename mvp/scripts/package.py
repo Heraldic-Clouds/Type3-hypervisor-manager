@@ -13,4 +13,3 @@ for name in ("api","worker","dbops"):
                 info.external_attr=(0o100755 if path.name=="bootstrap" else 0o100644)<<16
                 archive.writestr(info,path.read_bytes(),compress_type=ZIP_DEFLATED)
     print(f"Packaged {name} with executable bootstrap")
-

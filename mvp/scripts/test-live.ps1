@@ -24,4 +24,3 @@ try{
  if($created){aws lambda delete-function --function-name mea-staging-verification-helper --profile $Profile|Out-Null}
  Remove-Item Env:MEA_LIVE_CONFIRM -ErrorAction SilentlyContinue
 }
-

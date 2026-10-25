@@ -68,4 +68,3 @@ services:
 volumes:
   pgdata:
   frontdeps:
-

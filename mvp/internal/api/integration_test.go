@@ -46,7 +46,10 @@ func TestRealPostgresAuthorizationAndLifecycle(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set TEST_DATABASE_URL for real PostgreSQL integration")
 	}
-	u,parseErr:=url.Parse(dsn);if parseErr!=nil || (u.Hostname()!="localhost"&&u.Hostname()!="127.0.0.1"&&u.Hostname()!="host.docker.internal"&&u.Hostname()!="postgres"){t.Fatal("Destructive test fixtures are restricted to local PostgreSQL")}
+	u, parseErr := url.Parse(dsn)
+	if parseErr != nil || (u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" && u.Hostname() != "host.docker.internal" && u.Hostname() != "postgres") {
+		t.Fatal("Destructive test fixtures are restricted to local PostgreSQL")
+	}
 	ctx := context.Background()
 	st, e := store.Open(ctx, dsn)
 	if e != nil {
@@ -163,5 +166,30 @@ func TestRealPostgresAuthorizationAndLifecycle(t *testing.T) {
 	if code, _ = b.call("GET", "/me", nil); code != 401 {
 		t.Fatal("revoked session accepted")
 	}
+	if code, _ = b.call("POST", "/auth/forgot", map[string]string{"Email": "bob@example.test"}); code != 200 {
+		t.Fatal("reset request failed")
+	}
+	var resetToken string
+	if e = st.DB.QueryRow(ctx, `SELECT payload->>'token' FROM mea.outbox WHERE payload->>'email'='bob@example.test' AND payload->>'kind'='reset' ORDER BY created_at DESC LIMIT 1`).Scan(&resetToken); e != nil {
+		t.Fatal(e)
+	}
+	newPassword := "A-new-disposable-test-password"
+	if code, _ = b.call("POST", "/auth/reset", map[string]string{"Token": resetToken, "Password": newPassword}); code != 200 {
+		t.Fatal("password reset failed")
+	}
+	if code, _ = b.call("POST", "/auth/reset", map[string]string{"Token": resetToken, "Password": newPassword}); code != 400 {
+		t.Fatal("reset token replay accepted")
+	}
+	if code, _ = b.call("POST", "/auth/login", map[string]string{"Email": "bob@example.test", "Password": newPassword}); code != 200 {
+		t.Fatal("new password login failed")
+	}
+	st.DB.Close()
+	if code, _ = c.call("GET", "/me", nil); code != 503 {
+		t.Fatal("database outage did not fail closed")
+	}
+	if code, _ = c.call("GET", "/health", nil); code != 503 {
+		t.Fatal("database outage health check was successful")
+	}
 	t.Log("PASS: transactional identity mapping, concurrent idempotency, two-user isolation, CSRF, cap, idle termination, fresh lease, expiry, revocation")
+	t.Log("PASS: password reset, token replay protection, new-password login and fail-closed database outage")
 }

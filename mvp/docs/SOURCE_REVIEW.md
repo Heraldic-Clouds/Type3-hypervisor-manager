@@ -26,4 +26,3 @@ The React application uses the official common-js from that exact image.
 
 Backend branch: codex/newbie-mvp in Type3-hypervisor-manager.
 Frontend branch: codex/newbie-mvp in mea-web.
-

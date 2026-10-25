@@ -4,4 +4,3 @@
 Dockerfile text eol=lf
 *.go text eol=lf
 *.sql text eol=lf
-

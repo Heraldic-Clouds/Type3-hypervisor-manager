@@ -13,4 +13,3 @@ Copy-Item schema/* build/api/schema/ -Force
 Copy-Item schema/* build/dbops/schema/ -Force
 python scripts/package.py
 if($LASTEXITCODE -ne 0){throw 'Packaging failed'}
-

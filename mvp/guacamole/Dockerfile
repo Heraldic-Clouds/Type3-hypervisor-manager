@@ -10,4 +10,3 @@ COPY --from=extension /src/target/mea-lifecycle-1.0.0.jar /etc/guacamole/extensi
 COPY schema/rds-ca.pem /opt/guacamole/rds-ca.pem
 ENV GUACAMOLE_HOME=/etc/guacamole
 USER guacamole
-

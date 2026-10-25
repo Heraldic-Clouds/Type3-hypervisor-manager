@@ -86,4 +86,3 @@ output "builder_security_group" { value = aws_security_group.builder.id }
 output "builder_profile" { value = aws_iam_instance_profile.builder.name }
 output "api_endpoint" { value = aws_apigatewayv2_api.http.api_endpoint }
 output "database_endpoint" { value = aws_db_instance.database.endpoint }
-

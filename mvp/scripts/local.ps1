@@ -8,4 +8,3 @@ docker compose up -d --build
 if ($LASTEXITCODE -ne 0) { throw 'Local environment failed to start' }
 Write-Host 'MEA local URL: http://localhost:5173'
 Write-Host 'Disposable test credentials are stored only in the ignored .env file.'
-

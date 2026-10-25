@@ -10,4 +10,3 @@ COPY --from=build /api /api
 COPY schema /schema
 USER 65532:65532
 ENTRYPOINT ["/api"]
-

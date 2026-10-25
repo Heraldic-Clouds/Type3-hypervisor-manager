@@ -1,8 +1,31 @@
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/api	[no test files]
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/dbops	[no test files]
-ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/worker	0.012s
-ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api	0.524s
+=== RUN   TestLaunchFailureDoesNotAssign
+--- PASS: TestLaunchFailureDoesNotAssign (0.00s)
+=== RUN   TestCleanupWaitsForActualTermination
+--- PASS: TestCleanupWaitsForActualTermination (0.00s)
+=== RUN   TestRetryAfterReadyDoesNotReadDeletedSecret
+--- PASS: TestRetryAfterReadyDoesNotReadDeletedSecret (0.00s)
+=== RUN   TestRevokedLeaseNeverLaunches
+--- PASS: TestRevokedLeaseNeverLaunches (0.00s)
+=== RUN   TestProbeWaitsForCredentialBootstrap
+--- PASS: TestProbeWaitsForCredentialBootstrap (0.00s)
+PASS
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/cmd/worker	0.010s
+=== RUN   TestRealPostgresAuthorizationAndLifecycle
+2026/10/25 13:55:32 ERROR request failed path=/api/me error="closed pool"
+2026/10/25 13:55:32 ERROR request failed path=/api/health error="closed pool"
+    integration_test.go:193: PASS: transactional identity mapping, concurrent idempotency, two-user isolation, CSRF, cap, idle termination, fresh lease, expiry, revocation
+    integration_test.go:194: PASS: password reset, token replay protection, new-password login and fail-closed database outage
+--- PASS: TestRealPostgresAuthorizationAndLifecycle (0.62s)
+PASS
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api	0.633s
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/cloud	[no test files]
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control	[no test files]
-ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security	0.241s
+=== RUN   TestArgon2
+--- PASS: TestArgon2 (0.22s)
+=== RUN   TestGuacamoleWireContract
+--- PASS: TestGuacamoleWireContract (0.00s)
+PASS
+ok  	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security	(cached)
 ?   	github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store	[no test files]

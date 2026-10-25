@@ -51,7 +51,8 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 	db := s.Store.DB
 	switch r.Action {
 	case "active-sessions":
-	 e:=db.QueryRow(ctx,`SELECT count(*) FROM mea.desktop_sessions WHERE closed_at IS NULL AND connected_at IS NOT NULL`).Scan(&result.Count);return result,e
+		e := db.QueryRow(ctx, `SELECT count(*) FROM mea.desktop_sessions WHERE closed_at IS NULL AND connected_at IS NOT NULL`).Scan(&result.Count)
+		return result, e
 	case "reconcile":
 		tx, e := db.Begin(ctx)
 		if e != nil {

@@ -31,4 +31,3 @@ the ALB; the upstream login and administration UI are not published.
 For alpha, Guacamole is restricted to one task. Its single-use JSON replay cache
 is process-local. Scaling out requires shared replay enforcement; routine ECS
 deployment can interrupt active connections. Drain during a maintenance window.
-

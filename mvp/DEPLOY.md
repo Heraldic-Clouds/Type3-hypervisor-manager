@@ -172,4 +172,3 @@ a Guacamole task.
 
 No billing, paid tiers, external identity provider, LXD or GPU streaming is
 included. SES production approval remains external to the implementation.
-

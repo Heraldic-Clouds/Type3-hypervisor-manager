@@ -60,4 +60,3 @@ locals {
   log_groups   = toset(["api", "control", "migrate", "worker", "guacamole", "guacd", "workflow", "http"])
   lambda_trust = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
 }
-

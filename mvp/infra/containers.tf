@@ -143,4 +143,3 @@ resource "aws_appautoscaling_target" "guac" {
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
-

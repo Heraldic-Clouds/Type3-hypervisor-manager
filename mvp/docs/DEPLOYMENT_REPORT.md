@@ -48,15 +48,17 @@ Screenshots: verification/ubuntu-desktop.png and verification/fresh-desktop.png.
   cleanup waiting for actual instance removal.
 - Real PostgreSQL integration tests passed for identity mapping, concurrent
   provisioning, two-user authorization, CSRF, global quota, idle expiration,
-  fresh leases, expired sessions and logout revocation.
+  fresh leases, expired sessions, logout revocation, password reset, reset-token
+  replay rejection and fail-closed behavior when the database pool is unavailable.
 - Docker Compose's real XFCE/XRDP browser workflow passed.
 - Desktop and mobile landing-page browser checks passed.
 - React TypeScript/Vite build passed; npm audit reported zero vulnerabilities.
 - Terraform and Packer configurations validated.
 - PowerShell deployment/teardown scripts parsed successfully.
 
-See verification/go-tests.txt for the saved Go results. GitHub Actions workflows
-are included; local test results are distinct from remote CI results.
+See verification/go-tests.txt for the saved Go results. Both GitHub Actions
+workflows also passed: backend run 40199358243 and frontend run 40199643505.
+The branch's Actions pages show subsequent commits' current CI status.
 
 ## Cost and remaining limits
 
@@ -75,4 +77,3 @@ Scaling out and concurrent container rollout require shared replay protection
 and stronger draining coordination. Explicit destroy/provision actions may wait
 up to one one-minute watchdog interval. Teardown is provided as a reviewed plan
 and script; the live service was intentionally not destroyed.
-

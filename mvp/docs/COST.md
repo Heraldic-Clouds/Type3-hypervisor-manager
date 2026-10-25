@@ -41,4 +41,3 @@ https://aws.amazon.com/rds/postgresql/pricing/
 https://aws.amazon.com/elasticloadbalancing/pricing/
 https://aws.amazon.com/vpc/pricing/
 https://aws.amazon.com/ec2/pricing/on-demand/
-

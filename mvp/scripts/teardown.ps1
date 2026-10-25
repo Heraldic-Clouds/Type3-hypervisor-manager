@@ -30,4 +30,3 @@ if($RemoveImage){
  foreach($snapshot in $snapshots){aws ec2 delete-snapshot --snapshot-id $snapshot --profile stratus2-tantalus}
 }
 Write-Host 'MEA staging removed; original apex/www DNS restored.'
-

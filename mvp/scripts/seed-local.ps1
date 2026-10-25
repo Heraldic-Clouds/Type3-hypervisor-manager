@@ -7,4 +7,3 @@ foreach($name in @('alice','bob')){
  try{Invoke-RestMethod -Uri 'http://localhost:8081/api/auth/register' -Method Post -Headers @{Origin='http://localhost:5173'} -ContentType application/json -Body $body|Out-Null}catch{if($_.Exception.Response.StatusCode.value__ -ne 409){throw}}
 }
 Write-Host 'Seeded alice@example.test and bob@example.test. Password is SEED_PASSWORD in .env.'
-

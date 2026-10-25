@@ -107,7 +107,7 @@ resource "aws_security_group" "endpoint" {
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    security_groups = [aws_security_group.lambda.id, aws_security_group.guac.id,aws_security_group.desktop.id]
+    security_groups = [aws_security_group.lambda.id, aws_security_group.guac.id, aws_security_group.desktop.id]
   }
 }
 resource "aws_vpc_endpoint" "secrets" {
@@ -118,4 +118,3 @@ resource "aws_vpc_endpoint" "secrets" {
   subnet_ids          = [aws_subnet.private[0].id]
   security_group_ids  = [aws_security_group.endpoint.id]
 }
-

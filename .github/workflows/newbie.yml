@@ -39,4 +39,3 @@ jobs:
       - run: docker run --rm -v "$PWD:/work" -w /work/infra hashicorp/terraform:1.17.0 init -backend=false -input=false
       - run: docker run --rm -v "$PWD:/work" -w /work/infra hashicorp/terraform:1.17.0 validate
       - run: docker build -f guacamole/Dockerfile -t mea-guacamole:ci .
-
