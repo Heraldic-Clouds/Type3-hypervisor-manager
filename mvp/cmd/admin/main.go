@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	runtime "github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -138,7 +139,21 @@ func lookup(ctx context.Context, st *store.Store, r request) (map[string]any, er
 	return map[string]any{"candidates": found, "guacamoleAdministrators": admins, "otherConnections": preserved, "totalUsers": users}, crows.Err()
 }
 
-// grant is implemented with the administrator migration in Phase C.
+// grant promotes one account, named by its immutable ID and checked against
+// the expected verified email. It is idempotent and audited.
 func grant(ctx context.Context, st *store.Store, r request) (map[string]any, error) {
-	return nil, errors.New("grant is not available until the administrator migration is deployed")
+	if r.UserID == "" || r.Email == "" {
+		return nil, errors.New("userId and email are both required")
+	}
+	changed, e := beta.GrantAdmin(ctx, st.DB, "", r.UserID, r.Email, r.Reason)
+	if e != nil {
+		return nil, e
+	}
+	result, e := lookup(ctx, st, request{Email: r.Email})
+	if result != nil {
+		result["changed"] = changed
+		result["meaAdmin"], _ = beta.IsAdmin(ctx, st.DB, r.UserID)
+		result["access"], _ = beta.AccessFor(ctx, st.DB, r.UserID)
+	}
+	return result, e
 }

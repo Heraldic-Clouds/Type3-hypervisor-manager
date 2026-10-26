@@ -19,7 +19,7 @@ variable "gpu_instance_type" {
   }
 }
 variable "gpu_data_gib" { default = 250 }
-variable "budget_limit" { default = "150" }
+variable "budget_limit" { default = "200" }
 variable "stripe_price_power" { default = "" }
 variable "stripe_price_eleet" { default = "" }
 variable "gpu_host_idle_seconds" { default = 900 }

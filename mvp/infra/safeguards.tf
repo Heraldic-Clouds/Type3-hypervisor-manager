@@ -18,6 +18,14 @@ resource "aws_budgets_budget" "monthly" {
     notification_type          = "FORECASTED"
     subscriber_email_addresses = [var.budget_email]
   }
+  # Owner's requested alert: actual spend above the limit ($200).
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_email]
+  }
 }
 resource "aws_cloudwatch_log_metric_filter" "capacity" {
   name           = "${local.prefix}-capacity"
