@@ -44,6 +44,10 @@ source "amazon-ebs" "gpuhost" {
 }
 build {
   sources = ["source.amazon-ebs.gpuhost"]
+  # A trailing-slash directory upload needs its destination to exist.
+  provisioner "shell" {
+    inline = ["mkdir -p /tmp/mea-files"]
+  }
   provisioner "file" {
     source      = "files/"
     destination = "/tmp/mea-files"
