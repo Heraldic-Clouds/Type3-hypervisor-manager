@@ -33,6 +33,11 @@ func ValidTier(t string) bool { return t == "power" || t == "eleet" }
 // ErrInvalidCode is deliberately uniform: unknown, expired, revoked,
 // exhausted, wrong-tier and wrong-account codes are indistinguishable.
 var ErrInvalidCode = errors.New("This invitation code is not valid for this plan or account")
+// Invalid is a validation failure an administrator can act on.
+type Invalid string
+
+func (i Invalid) Error() string { return string(i) }
+
 var ErrBusy = errors.New("A checkout is already in progress for this invitation. Try again in a few minutes.")
 
 // Crockford base32 without I, L, O, U: 20 symbols carry 100 bits.
@@ -110,24 +115,24 @@ func Audit(ctx context.Context, db DB, actor, action, target string, details any
 // Create returns the plaintext code exactly once; only its hash is stored.
 func Create(ctx context.Context, db DB, actor string, n NewInvitation) (string, Invitation, error) {
 	if len(n.Tiers) == 0 || len(n.Tiers) > 2 {
-		return "", Invitation{}, errors.New("Choose Power, Eleet or both")
+		return "", Invitation{}, Invalid("Choose Power, Eleet or both")
 	}
 	seen := map[string]bool{}
 	for _, t := range n.Tiers {
 		if !ValidTier(t) || seen[t] {
-			return "", Invitation{}, errors.New("Choose Power, Eleet or both")
+			return "", Invitation{}, Invalid("Choose Power, Eleet or both")
 		}
 		seen[t] = true
 	}
 	if n.MaxRedemptions < 1 || n.MaxRedemptions > 10000 {
-		return "", Invitation{}, errors.New("Redemptions must be between 1 and 10000")
+		return "", Invitation{}, Invalid("Redemptions must be between 1 and 10000")
 	}
 	if !n.ExpiresAt.After(time.Now().Add(time.Minute)) || n.ExpiresAt.After(time.Now().AddDate(1, 0, 0)) {
-		return "", Invitation{}, errors.New("Expiry must be within the next year")
+		return "", Invitation{}, Invalid("Expiry must be within the next year")
 	}
 	n.Email = strings.ToLower(strings.TrimSpace(n.Email))
 	if len(n.Note) > 200 || len(n.Email) > 254 {
-		return "", Invitation{}, errors.New("Note or email is too long")
+		return "", Invitation{}, Invalid("Note or email is too long")
 	}
 	tx, e := db.Begin(ctx)
 	if e != nil {
@@ -388,10 +393,6 @@ func AccessFor(ctx context.Context, db DB, user string) (Access, error) {
 		if e = rows.Scan(&tier, &source); e != nil {
 			return a, e
 		}
-		// admin_grant only counts while the administrator role is held.
-		if source == "admin_grant" && !a.Admin {
-			continue
-		}
 		if a.Source == "" || source == "admin_grant" {
 			a.Source = source
 		}
@@ -426,7 +427,7 @@ func (a Access) Has(tier string) bool {
 // entitlements for both paid tiers in one transaction.
 func GrantAdmin(ctx context.Context, db DB, actor, user, expectEmail, reason string) (bool, error) {
 	if strings.TrimSpace(reason) == "" {
-		return false, errors.New("a reason is required")
+		return false, Invalid("a reason is required")
 	}
 	tx, e := db.Begin(ctx)
 	if e != nil {
@@ -438,16 +439,16 @@ func GrantAdmin(ctx context.Context, db DB, actor, user, expectEmail, reason str
 	var entity int
 	e = tx.QueryRow(ctx, `SELECT email,verified,disabled,entity_id FROM mea.users WHERE id=$1 FOR UPDATE`, user).Scan(&email, &verified, &disabled, &entity)
 	if errors.Is(e, pgx.ErrNoRows) {
-		return false, errors.New("account not found")
+		return false, Invalid("account not found")
 	}
 	if e != nil {
 		return false, e
 	}
 	if expectEmail != "" && !strings.EqualFold(email, expectEmail) {
-		return false, fmt.Errorf("identity mismatch: account email does not match the expected email")
+		return false, Invalid("identity mismatch: account email does not match the expected email")
 	}
 	if !verified || disabled {
-		return false, errors.New("identity mismatch: account is not verified or is disabled")
+		return false, Invalid("identity mismatch: account is not verified or is disabled")
 	}
 	var a any
 	if actor != "" {
@@ -475,7 +476,7 @@ func GrantAdmin(ctx context.Context, db DB, actor, user, expectEmail, reason str
 
 func RevokeAdmin(ctx context.Context, db DB, actor, user, reason string) error {
 	if actor == user {
-		return errors.New("administrators cannot revoke their own role")
+		return Invalid("administrators cannot revoke their own role")
 	}
 	tx, e := db.Begin(ctx)
 	if e != nil {
@@ -487,7 +488,7 @@ func RevokeAdmin(ctx context.Context, db DB, actor, user, reason string) error {
 		return e
 	}
 	if remaining == 0 {
-		return errors.New("the last administrator cannot be revoked")
+		return Invalid("the last administrator cannot be revoked")
 	}
 	if _, e = tx.Exec(ctx, `UPDATE mea.user_roles SET revoked_at=now(),revoked_by=$2 WHERE user_id=$1 AND role='admin' AND revoked_at IS NULL`, user, actor); e != nil {
 		return e
@@ -499,6 +500,35 @@ func RevokeAdmin(ctx context.Context, db DB, actor, user, reason string) error {
 		return e
 	}
 	if e = Audit(ctx, tx, actor, "admin.revoke", user, map[string]any{"reason": reason}); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
+}
+
+// SetComp grants or revokes a complimentary (admin_grant) entitlement.
+func SetComp(ctx context.Context, db DB, actor, user, tier string, grant bool, reason string) error {
+	if !ValidTier(tier) || strings.TrimSpace(reason) == "" {
+		return Invalid("tier and reason are required")
+	}
+	tx, e := db.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if grant {
+		_, e = tx.Exec(ctx, `INSERT INTO mea.entitlements(id,user_id,tier,source,status,reason,granted_by) SELECT $1,id,$3,'admin_grant','active',$4,$5 FROM mea.users WHERE id=$2 AND verified AND NOT disabled
+ ON CONFLICT (user_id,source,tier) WHERE status<>'revoked' DO UPDATE SET status='active',updated_at=now()`, security.ID(), user, tier, reason, actor)
+	} else {
+		_, e = tx.Exec(ctx, `UPDATE mea.entitlements SET status='revoked',updated_at=now() WHERE user_id=$1 AND tier=$2 AND source='admin_grant' AND status<>'revoked'`, user, tier)
+	}
+	if e != nil {
+		return e
+	}
+	action := "entitlement.revoke"
+	if grant {
+		action = "entitlement.grant"
+	}
+	if e = Audit(ctx, tx, actor, action, user, map[string]string{"tier": tier, "reason": reason}); e != nil {
 		return e
 	}
 	return tx.Commit(ctx)

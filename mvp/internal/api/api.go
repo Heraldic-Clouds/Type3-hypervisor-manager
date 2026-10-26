@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,7 @@ type Config struct {
 type Server struct {
 	Store  *store.Store
 	Config Config
+	Infra  Infra
 	dummy  string
 }
 type auth struct {
@@ -44,7 +46,7 @@ func (e HTTPError) Error() string     { return e.Message }
 func fail(code int, msg string) error { return HTTPError{code, msg} }
 func New(s *store.Store, c Config) *Server {
 	dummy, _ := security.Password(security.Random(24))
-	return &Server{s, c, dummy}
+	return &Server{Store: s, Config: c, dummy: dummy}
 }
 func write(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -146,7 +148,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	switch path {
 	case "/api/me":
 		if r.Method == "GET" {
-			write(w, 200, map[string]any{"user": a.User, "csrf": a.CSRF, "idleSeconds": s.Config.IdleSeconds, "warningSeconds": s.Config.WarningSeconds, "graceSeconds": s.Config.GraceSeconds})
+			access, e := beta.AccessFor(r.Context(), s.Store.DB, a.User.ID)
+			if e != nil {
+				return e
+			}
+			write(w, 200, map[string]any{"user": a.User, "access": access, "csrf": a.CSRF, "idleSeconds": s.Config.IdleSeconds, "warningSeconds": s.Config.WarningSeconds, "graceSeconds": s.Config.GraceSeconds})
 			return nil
 		}
 	case "/api/logout":
@@ -221,6 +227,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if r.Method == "POST" {
 			return s.create(w, r, a)
 		}
+	}
+	if strings.HasPrefix(path, "/api/admin/") {
+		return s.admin(w, r, a, path)
 	}
 	if strings.HasPrefix(path, "/api/desktops/") {
 		p := strings.Split(strings.TrimPrefix(path, "/api/desktops/"), "/")

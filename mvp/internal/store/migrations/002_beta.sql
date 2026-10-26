@@ -96,6 +96,9 @@ ALTER TABLE mea.desktops ADD CONSTRAINT desktops_state_check CHECK (state IN ('w
 DROP INDEX IF EXISTS mea.one_active_desktop;
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_desktop ON mea.desktops(user_id) WHERE state IN ('waiting','queued','provisioning','ready','terminating');
 
+-- Step-up: destructive administrator actions need a password check within 10 minutes.
+ALTER TABLE mea.sessions ADD COLUMN IF NOT EXISTS reauth_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS mea.admin_audit (
  id bigserial PRIMARY KEY, actor_id uuid, action text NOT NULL, target text NOT NULL DEFAULT '',
  details jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()

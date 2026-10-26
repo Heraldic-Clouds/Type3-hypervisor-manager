@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/billing"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/jackc/pgx/v5"
 	"net"
@@ -21,6 +23,9 @@ type Request struct {
 	ARN        string `json:"arn,omitempty"`
 	Error      string `json:"error,omitempty"`
 	OutboxID   string `json:"outboxId,omitempty"`
+	// Billing carries a database operation for the billing function, which
+	// has internet access for Stripe but no route to the private database.
+	Billing *billing.Call `json:"billing,omitempty"`
 }
 type Job struct {
 	ID          string    `json:"id"`
@@ -39,6 +44,7 @@ type Result struct {
 	Ready bool   `json:"ready"`
 	Skip  bool   `json:"skip"`
 	Count int    `json:"count"`
+	Billing *billing.Reply `json:"billing,omitempty"`
 }
 type Service struct {
 	Store                     *store.Store
@@ -50,6 +56,13 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 	result := Result{}
 	db := s.Store.DB
 	switch r.Action {
+	case "billing":
+		if r.Billing == nil {
+			return result, errors.New("billing call required")
+		}
+		reply, e := billing.Dispatch(ctx, billing.DB{Store: s.Store}, *r.Billing)
+		result.Billing = &reply
+		return result, e
 	case "active-sessions":
 		e := db.QueryRow(ctx, `SELECT count(*) FROM mea.desktop_sessions WHERE closed_at IS NULL AND connected_at IS NOT NULL`).Scan(&result.Count)
 		return result, e
@@ -89,6 +102,10 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		}
 		_, e = tx.Exec(ctx, `DELETE FROM mea.rate_limits WHERE reset_at<now()-interval '1 day'; DELETE FROM mea.tokens WHERE expires_at<now()-interval '1 day'`)
 		if e != nil {
+			return result, e
+		}
+		// Abandoned checkouts return their invitation slot.
+		if e = beta.ReleaseExpired(ctx, tx); e != nil {
 			return result, e
 		}
 		if e = tx.Commit(ctx); e != nil {
