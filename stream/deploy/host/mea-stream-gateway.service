@@ -1,0 +1,21 @@
+[Unit]
+Description=MEA Stream gateway (WebRTC for every Gaming Mode session on this host)
+After=network-online.target snap.lxd.daemon.service
+Wants=network-online.target
+
+[Service]
+User=mea-stream
+EnvironmentFile=/etc/mea-stream/gateway.env
+ExecStart=/usr/local/bin/mea-stream-gateway
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=always
+RestartSec=1
+StateDirectory=mea-stream
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/type3
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

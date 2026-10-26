@@ -1,0 +1,20 @@
+[Unit]
+Description=MEA Stream agent (capture, NVENC, audio, input) for this desktop
+Requires=mea-xorg.service
+After=mea-desktop.service
+
+[Service]
+User=mea
+SupplementaryGroups=input
+EnvironmentFile=/etc/mea-stream/agent.env
+Environment=DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/local/bin/mea-stream-agent
+Restart=always
+RestartSec=1
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

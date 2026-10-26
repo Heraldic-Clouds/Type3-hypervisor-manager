@@ -1,0 +1,28 @@
+# LXD profile for Eleet desktops that can use Gaming Mode.
+#   lxc profile create eleet-gpu && lxc profile edit eleet-gpu < eleet-gpu.yaml
+#   lxc launch <image> <name> -p default -p eleet-gpu
+#   lxc config set <name> user.mea.desktop_id <MEA desktop id>
+#
+# Power desktops must never get this profile: it is what grants the GPU.
+name: eleet-gpu
+description: Eleet desktop with NVIDIA GPU, NVENC and virtual gamepads (MEA Stream)
+config:
+  # The host's NVIDIA userspace (CUDA, NVENC, NvFBC, nvidia-smi) is mounted
+  # in by LXD at the host driver version, so it can never drift.
+  nvidia.runtime: "true"
+  nvidia.driver.capabilities: compute,video,graphics,utility,display
+  # One L4 is shared by up to four desktops; keep each within its plan.
+  limits.cpu: "4"
+  limits.memory: 12GiB
+devices:
+  gpu:
+    type: gpu
+    gputype: physical
+    # pci: "0000:31:00.0"   # pin when the host has more than one GPU
+  uinput:
+    # Virtual Xbox-style pads are created by the agent through uinput.
+    type: unix-char
+    source: /dev/uinput
+    path: /dev/uinput
+    mode: "0660"
+    gid: "0"

@@ -25,6 +25,7 @@ type Config struct {
 	Origin, GuacKey                                                 string
 	Secure, RequireVerification, Local                              bool
 	Cap, IdleSeconds, WarningSeconds, GraceSeconds, LifetimeSeconds int
+	Stream                                                          *StreamConfig
 }
 type Server struct {
 	Store  *store.Store
@@ -251,6 +252,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 				return s.activity(w, r, a, d)
 			case "disconnect":
 				return s.disconnect(w, r, a, d)
+			case "stream":
+				return s.stream(w, r, a, d)
 			}
 		}
 	}

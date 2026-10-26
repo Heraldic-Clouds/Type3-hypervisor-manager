@@ -1,0 +1,13 @@
+[Unit]
+Description=MEA Stream agent registry from LXD
+After=snap.lxd.daemon.service
+
+[Service]
+ExecStart=/usr/local/bin/mea-stream-registry
+Environment=MEA_REGISTRY_FILE=/var/lib/type3/stream-agents.json
+StateDirectory=type3
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

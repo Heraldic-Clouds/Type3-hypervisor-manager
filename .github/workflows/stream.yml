@@ -1,0 +1,33 @@
+name: MEA Stream
+on:
+  push:
+    paths: ['stream/**', '.github/workflows/stream.yml']
+  pull_request:
+    paths: ['stream/**', '.github/workflows/stream.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stream
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: stream/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg xvfb libffmpeg-nvenc-dev
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      # Xvfb backs the XTest input test and the browser end-to-end test.
+      - run: xvfb-run -a go test -race ./...
+      - run: CGO_ENABLED=0 go build -trimpath -o bin/ ./cmd/... ./e2e/xprobe
+      # mea-capture is built on the GPU host: it needs the NVIDIA Capture SDK
+      # header, which is not committed. The browser e2e needs the mea-web
+      # build; run it as described in stream/README.md.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mea-stream-linux-amd64
+          path: stream/bin/

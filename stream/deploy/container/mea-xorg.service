@@ -1,0 +1,11 @@
+[Unit]
+Description=MEA desktop X server on the NVIDIA GPU (display :0)
+After=systemd-user-sessions.service
+
+[Service]
+ExecStart=/usr/bin/Xorg :0 -config /etc/X11/xorg.conf -nolisten tcp -noreset vt7 -sharevts
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
