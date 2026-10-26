@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/infra"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security"
 	"github.com/jackc/pgx/v5"
 )
@@ -206,7 +207,11 @@ func (s *Server) admin(w http.ResponseWriter, r *http.Request, a auth, path stri
 				}
 			}
 		}
-		return s.Infra.Handle(w, r, a.User.ID, "/"+strings.Join(p[1:], "/"))
+		e = s.Infra.Handle(w, r, a.User.ID, "/"+strings.Join(p[1:], "/"))
+		if code, msg, ok := infra.Status(e); ok {
+			return fail(code, msg)
+		}
+		return e
 	}
 	return fail(404, "Not found")
 }

@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS mea.gpu_hosts (
  private_ip text, ready boolean NOT NULL DEFAULT false,
  lease_owner text, lease_until timestamptz,
  started_at timestamptz, last_busy_at timestamptz, last_transition timestamptz NOT NULL DEFAULT now(),
- running_seconds bigint NOT NULL DEFAULT 0, metrics jsonb NOT NULL DEFAULT '{}'::jsonb, error text
+ running_seconds bigint NOT NULL DEFAULT 0, metrics jsonb NOT NULL DEFAULT '{}'::jsonb, error text,
+ fingerprint text, hold_until timestamptz, launches integer NOT NULL DEFAULT 0,
+ metrics_at timestamptz
 );
 INSERT INTO mea.gpu_hosts(slot) VALUES (1) ON CONFLICT DO NOTHING;
 

@@ -147,13 +147,15 @@ type Desktop struct {
 	LastActivity time.Time `json:"lastActivity"`
 	ExpiresAt    time.Time `json:"expiresAt"`
 	Error        *string   `json:"error,omitempty"`
+	Tier         string    `json:"tier"`
+	KeepAlive    *time.Time `json:"keepAliveUntil,omitempty"`
 }
 
-const DesktopColumns = `id::text,user_id::text,state,instance_id,private_ip,connection_id,operation_id::text,last_activity,expires_at,error`
+const DesktopColumns = `id::text,user_id::text,state,instance_id,private_ip,connection_id,operation_id::text,last_activity,expires_at,error,tier,keep_alive_until`
 
 func ScanDesktop(row pgx.Row) (Desktop, error) {
 	var d Desktop
-	e := row.Scan(&d.ID, &d.UserID, &d.State, &d.InstanceID, &d.PrivateIP, &d.ConnectionID, &d.OperationID, &d.LastActivity, &d.ExpiresAt, &d.Error)
+	e := row.Scan(&d.ID, &d.UserID, &d.State, &d.InstanceID, &d.PrivateIP, &d.ConnectionID, &d.OperationID, &d.LastActivity, &d.ExpiresAt, &d.Error, &d.Tier, &d.KeepAlive)
 	return d, e
 }
 func (s *Store) Desktop(ctx context.Context, user, id string) (Desktop, error) {

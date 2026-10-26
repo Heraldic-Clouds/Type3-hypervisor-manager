@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/paid"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/security"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -26,6 +27,7 @@ type Config struct {
 	Origin, GuacKey                                                 string
 	Secure, RequireVerification, Local                              bool
 	Cap, IdleSeconds, WarningSeconds, GraceSeconds, LifetimeSeconds int
+	Paid                                                            paid.Config
 }
 type Server struct {
 	Store  *store.Store
@@ -254,6 +256,21 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		if len(p) == 2 && r.Method == "POST" {
 			switch p[1] {
+			case "keepalive":
+				var b struct{ Hours int }
+				if e := decode(r, &b); e != nil {
+					return e
+				}
+				e := paid.KeepAlive(r.Context(), s.Store, s.Config.Paid, a.User.ID, d.ID, b.Hours)
+				var pf paid.Fail
+				if errors.As(e, &pf) {
+					return fail(pf.Code, pf.Message)
+				}
+				if e != nil {
+					return e
+				}
+				write(w, 200, map[string]bool{"ok": true})
+				return nil
 			case "connect":
 				return s.connect(w, r, a, d)
 			case "activity":
@@ -553,7 +570,29 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 	if s.Config.RequireVerification && !a.User.Verified {
 		return fail(403, "Verify your email before creating a desktop")
 	}
+	var b struct{ Tier string }
+	if r.ContentLength != 0 {
+		if e := decode(r, &b); e != nil {
+			return e
+		}
+	}
 	ctx := r.Context()
+	switch strings.ToLower(b.Tier) {
+	case "", "newbie":
+	case "power", "eleet":
+		d, e := paid.Request(ctx, s.Store, s.Config.Paid, a.User.ID, strings.ToLower(b.Tier), 10*365*24*time.Hour)
+		var pf paid.Fail
+		if errors.As(e, &pf) {
+			return fail(pf.Code, pf.Message)
+		}
+		if e != nil {
+			return e
+		}
+		write(w, 202, map[string]any{"desktop": d})
+		return nil
+	default:
+		return fail(400, "Unknown plan")
+	}
 	tx, e := s.Store.DB.Begin(ctx)
 	if e != nil {
 		return e
@@ -562,7 +601,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(739103)"); e != nil {
 		return e
 	}
-	d, e := store.ScanDesktop(tx.QueryRow(ctx, "SELECT "+store.DesktopColumns+" FROM mea.desktops WHERE user_id=$1 AND state IN ('queued','provisioning','ready','terminating')", a.User.ID))
+	d, e := store.ScanDesktop(tx.QueryRow(ctx, "SELECT "+store.DesktopColumns+" FROM mea.desktops WHERE user_id=$1 AND state IN ('waiting','queued','provisioning','ready','terminating')", a.User.ID))
 	if e == nil {
 		write(w, 200, map[string]any{"desktop": d})
 		return nil
@@ -571,7 +610,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 		return e
 	}
 	var count int
-	if e = tx.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE state IN ('queued','provisioning','ready','terminating')`).Scan(&count); e != nil {
+	if e = tx.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&count); e != nil {
 		return e
 	}
 	if count >= s.Config.Cap {
@@ -592,7 +631,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 	return nil
 }
 func (s *Server) destroy(w http.ResponseWriter, r *http.Request, a auth, d store.Desktop) error {
-	_, e := s.Store.DB.Exec(r.Context(), `UPDATE mea.desktops SET state='terminating',disconnect_at=now() WHERE id=$1 AND user_id=$2 AND state IN ('queued','provisioning','ready')`, d.ID, a.User.ID)
+	_, e := s.Store.DB.Exec(r.Context(), `UPDATE mea.desktops SET state='terminating',disconnect_at=now(),keep_alive_until=NULL WHERE id=$1 AND user_id=$2 AND state IN ('waiting','queued','provisioning','ready')`, d.ID, a.User.ID)
 	if e != nil {
 		return e
 	}

@@ -30,6 +30,8 @@ type worker struct {
 	invoke invokeAPI
 	sfn    *sfn.Client
 	mail   mailSender
+	// gpuHost is nil when Power/Eleet are not deployed.
+	gpuHost *gpuHost
 }
 type invokeAPI interface {
 	Invoke(context.Context, *lambda.InvokeInput, ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
@@ -237,7 +239,13 @@ func (w *worker) handle(ctx context.Context, e event) (map[string]any, error) {
 		}
 		_, err = w.db(ctx, control.Request{Action: "orphans"})
 		slog.Info("capacity", "environment", os.Getenv("RESOURCE_PREFIX"), "activeDesktops", plan.Count)
-		return map[string]any{"count": plan.Count}, err
+		if err != nil {
+			return nil, err
+		}
+		if _, gerr := w.gpu(ctx); gerr != nil {
+			slog.Error("gpu host lifecycle failed", "error", gerr)
+		}
+		return map[string]any{"count": plan.Count}, nil
 	default:
 		return nil, fmt.Errorf("unknown worker action")
 	}
@@ -248,7 +256,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	w := &worker{cloud: cloud.NewAWS(cfg), invoke: lambda.NewFromConfig(cfg), sfn: sfn.NewFromConfig(cfg), mail: newMailer(cfg)}
+	w := &worker{cloud: cloud.NewAWS(cfg), invoke: lambda.NewFromConfig(cfg), sfn: sfn.NewFromConfig(cfg), mail: newMailer(cfg), gpuHost: newGPUHost(cfg)}
 	lambdaruntime.Start(w.handle)
 }
 

@@ -29,7 +29,8 @@ type AWS struct {
 
 func (a *AWS) secret(id string) string { return a.Prefix + "/desktop/" + id }
 func (a *AWS) Find(ctx context.Context, id string) ([]Instance, error) {
-	filters := []ec2types.Filter{{Name: aws.String("tag:MEAEnvironment"), Values: []string{a.Prefix}}, {Name: aws.String("instance-state-name"), Values: []string{"pending", "running", "stopping", "stopped", "shutting-down"}}}
+	// Only Newbie desktops carry MEADesktop; the GPU host never matches.
+	filters := []ec2types.Filter{{Name: aws.String("tag:MEAEnvironment"), Values: []string{a.Prefix}}, {Name: aws.String("tag-key"), Values: []string{"MEADesktop"}}, {Name: aws.String("instance-state-name"), Values: []string{"pending", "running", "stopping", "stopped", "shutting-down"}}}
 	if id != "" {
 		filters = append(filters, ec2types.Filter{Name: aws.String("tag:MEADesktop"), Values: []string{id}})
 	}

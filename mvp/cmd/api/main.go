@@ -9,10 +9,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/infra"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/paid"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/type3"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/aws/aws-lambda-go/events"
 	lambdaruntime "github.com/aws/aws-lambda-go/lambda"
@@ -35,6 +39,39 @@ func number(k string, v int) int {
 	}
 	return n
 }
+// type3Connector returns a factory for clients of the GPU host's Type3, or nil
+// when Power/Eleet are not deployed. The API key is read once per cold start.
+func type3Connector(ctx context.Context, arn string) func(context.Context, paid.Host) (*type3.Client, error) {
+	if arn == "" {
+		return nil
+	}
+	var mu sync.Mutex
+	var key string
+	return func(ctx context.Context, h paid.Host) (*type3.Client, error) {
+		if h.PrivateIP == nil || h.Fingerprint == nil {
+			return nil, fmt.Errorf("GPU host address or certificate pin unknown")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if key == "" {
+			cfg, e := config.LoadDefaultConfig(ctx)
+			if e != nil {
+				return nil, e
+			}
+			out, e := secretsmanager.NewFromConfig(cfg).GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: aws.String(arn)})
+			if e != nil {
+				return nil, e
+			}
+			var v struct{ APIKey string }
+			if e = json.Unmarshal([]byte(aws.ToString(out.SecretString)), &v); e != nil || v.APIKey == "" {
+				return nil, fmt.Errorf("Type3 API key secret is invalid")
+			}
+			key = v.APIKey
+		}
+		return &type3.Client{Base: "https://" + *h.PrivateIP + ":7443", Key: key, Fingerprint: *h.Fingerprint}, nil
+	}
+}
+
 func main() {
 	ctx := context.Background()
 	dsn := os.Getenv("DATABASE_URL")
@@ -84,7 +121,12 @@ func main() {
 		}
 		return
 	}
-	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400)}
+	pc := paid.Defaults()
+	pc.Enabled = env("PAID_ENABLED", "false") == "true"
+	pc.EleetLimit = number("ELEET_ADMISSION_LIMIT", pc.EleetLimit)
+	pc.HostIdleSeconds = number("GPU_HOST_IDLE_SECONDS", pc.HostIdleSeconds)
+	connect := type3Connector(ctx, os.Getenv("TYPE3_SECRET_ARN"))
+	c := api.Config{Paid: pc, Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400)}
 	if c.Local {
 		b, e := os.ReadFile(env("GUAC_SCHEMA", "/schema/guacamole.sql"))
 		if e != nil {
@@ -115,11 +157,18 @@ func main() {
 		}()
 	}
 	if mode == "control" {
-		svc := &control.Service{Store: st, IdleSeconds: c.IdleSeconds, GraceSeconds: c.GraceSeconds, Local: c.Local}
+		svc := &control.Service{Store: st, IdleSeconds: c.IdleSeconds, GraceSeconds: c.GraceSeconds, Local: c.Local, Paid: pc}
+		if connect != nil {
+			svc.Type3 = func(ctx context.Context, h paid.Host) (paid.Type3, error) { return connect(ctx, h) }
+		}
 		lambdaruntime.Start(svc.Handle)
 		return
 	}
-	app := api.New(st, c).Handler()
+	server := api.New(st, c)
+	if connect != nil {
+		server.Infra = &infra.Service{Store: st, Config: pc, Type3: func(ctx context.Context, h paid.Host) (infra.Type3, error) { return connect(ctx, h) }}
+	}
+	app := server.Handler()
 	if os.Getenv("AWS_LAMBDA_RUNTIME_API") != "" {
 		adapter := httpadapter.NewV2(app)
 		lambdaruntime.Start(func(ctx context.Context, r events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) { // Trust API Gateway's source address, never client-supplied forwarding headers.

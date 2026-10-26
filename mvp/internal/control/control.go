@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/beta"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/billing"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/paid"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/jackc/pgx/v5"
 	"net"
@@ -23,6 +24,9 @@ type Request struct {
 	ARN        string `json:"arn,omitempty"`
 	Error      string `json:"error,omitempty"`
 	OutboxID   string `json:"outboxId,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	// Observation is the worker's report of the GPU host instance.
+	Observation *paid.Observation `json:"observation,omitempty"`
 	// Billing carries a database operation for the billing function, which
 	// has internet access for Stripe but no route to the private database.
 	Billing *billing.Call `json:"billing,omitempty"`
@@ -45,11 +49,16 @@ type Result struct {
 	Skip  bool   `json:"skip"`
 	Count int    `json:"count"`
 	Billing *billing.Reply `json:"billing,omitempty"`
+	Plan    *paid.Plan     `json:"plan,omitempty"`
+	Summary map[string]any `json:"summary,omitempty"`
 }
 type Service struct {
 	Store                     *store.Store
 	IdleSeconds, GraceSeconds int
 	Local                     bool
+	// Paid configures Power/Eleet; Type3 connects to the GPU host's Type3.
+	Paid  paid.Config
+	Type3 func(ctx context.Context, h paid.Host) (paid.Type3, error)
 }
 
 func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
@@ -62,6 +71,36 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		}
 		reply, e := billing.Dispatch(ctx, billing.DB{Store: s.Store}, *r.Billing)
 		result.Billing = &reply
+		return result, e
+	case "gpu-plan":
+		plan, e := paid.HostPlan(ctx, s.Store, s.Paid)
+		result.Plan = &plan
+		return result, e
+	case "gpu-lease":
+		ok, e := paid.Lease(ctx, s.Store, r.ID, 5*time.Minute)
+		result.Ready = ok
+		return result, e
+	case "gpu-observed":
+		if r.Observation == nil {
+			return result, errors.New("observation required")
+		}
+		return result, paid.Observe(ctx, s.Store, *r.Observation)
+	case "paid-reconcile":
+		if s.Type3 == nil {
+			result.Skip = true
+			return result, nil
+		}
+		en := &paid.Engine{Store: s.Store, Config: s.Paid, Type3: s.Type3,
+			Ready: func(ctx context.Context, desktop, ip string, port int, password string) (bool, error) {
+				res, err := s.Handle(ctx, Request{Action: "ready", ID: desktop, IP: ip, Port: port, Password: password})
+				return res.Ready, err
+			},
+			Terminated: func(ctx context.Context, desktop string) error {
+				_, err := s.Handle(ctx, Request{Action: "terminated", ID: desktop})
+				return err
+			}}
+		summary, e := en.Reconcile(ctx)
+		result.Summary = summary
 		return result, e
 	case "active-sessions":
 		e := db.QueryRow(ctx, `SELECT count(*) FROM mea.desktop_sessions WHERE closed_at IS NULL AND connected_at IS NOT NULL`).Scan(&result.Count)
@@ -84,10 +123,12 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e != nil {
 			return result, e
 		}
-		_, e = tx.Exec(ctx, `UPDATE mea.desktops SET state='terminating' WHERE state IN ('queued','provisioning','ready') AND (
-    expires_at<now() OR (state IN ('queued','provisioning') AND created_at<now()-interval '15 minutes')
-    OR (state='ready' AND last_activity<now()-$1::interval)
-    OR (state='ready' AND disconnect_at<now()-$2::interval))`, fmt.Sprintf("%d seconds", s.IdleSeconds), fmt.Sprintf("%d seconds", s.GraceSeconds))
+		// Idle and disconnect limits apply to every tier; a paid desktop's
+		// keep-alive suspends them, and paid provisioning has its own timeout.
+		_, e = tx.Exec(ctx, `UPDATE mea.desktops SET state='terminating' WHERE state IN ('waiting','queued','provisioning','ready') AND (
+    expires_at<now() OR (tier='newbie' AND state IN ('queued','provisioning') AND created_at<now()-interval '15 minutes')
+    OR (state='ready' AND last_activity<now()-$1::interval AND NOT COALESCE(keep_alive_until>now(),false))
+    OR (state='ready' AND disconnect_at<now()-$2::interval AND NOT COALESCE(keep_alive_until>now(),false)))`, fmt.Sprintf("%d seconds", s.IdleSeconds), fmt.Sprintf("%d seconds", s.GraceSeconds))
 		if e != nil {
 			return result, e
 		}
@@ -111,7 +152,8 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e = tx.Commit(ctx); e != nil {
 			return result, e
 		}
-		rows, e := db.Query(ctx, `SELECT id::text,state,instance_id,operation_id::text,created_at FROM mea.desktops WHERE state IN ('queued','provisioning','terminating') ORDER BY created_at LIMIT 10`)
+		// EC2 desktop jobs are Newbie only; paid desktops run in LXD containers.
+		rows, e := db.Query(ctx, `SELECT id::text,state,instance_id,operation_id::text,created_at FROM mea.desktops WHERE tier='newbie' AND state IN ('queued','provisioning','terminating') ORDER BY created_at LIMIT 10`)
 		if e != nil {
 			return result, e
 		}
@@ -143,7 +185,7 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e = rows.Err(); e != nil {
 			return result, e
 		}
-		e = db.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE state IN ('queued','provisioning','ready','terminating')`).Scan(&result.Count)
+		e = db.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&result.Count)
 		return result, e
 	case "claim":
 		tag, e := db.Exec(ctx, `UPDATE mea.desktops SET state='provisioning',execution_arn=$2 WHERE id=$1 AND state='queued'`, r.ID, r.ARN)
@@ -172,13 +214,17 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 			result.Skip = true
 			return result, nil
 		}
-		conn, e := net.DialTimeout("tcp", net.JoinHostPort(r.IP, "3389"), 2*time.Second)
+		port := "3389"
+		if r.Port != 0 {
+			port = strconv.Itoa(r.Port)
+		}
+		conn, e := net.DialTimeout("tcp", net.JoinHostPort(r.IP, port), 2*time.Second)
 		if e != nil {
 			return result, nil
 		}
 		conn.Close()
 		// Verify an RDP negotiation response, not only an accepting TCP port.
-		conn, e = net.DialTimeout("tcp", net.JoinHostPort(r.IP, "3389"), 2*time.Second)
+		conn, e = net.DialTimeout("tcp", net.JoinHostPort(r.IP, port), 2*time.Second)
 		if e != nil {
 			return result, nil
 		}
@@ -211,7 +257,7 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e != nil {
 			return result, e
 		}
-		for k, v := range map[string]string{"hostname": r.IP, "port": "3389", "username": "mea", "password": r.Password, "security": "tls", "ignore-cert": "true", "resize-method": "display-update", "enable-wallpaper": "false", "enable-font-smoothing": "false", "disable-audio": "true"} {
+		for k, v := range map[string]string{"hostname": r.IP, "port": port, "username": "mea", "password": r.Password, "security": "tls", "ignore-cert": "true", "resize-method": "display-update", "enable-wallpaper": "false", "enable-font-smoothing": "false", "disable-audio": "true"} {
 			if _, e = tx.Exec(ctx, `INSERT INTO guacamole_connection_parameter(connection_id,parameter_name,parameter_value) VALUES($1,$2,$3)`, connection, k, v); e != nil {
 				return result, e
 			}
