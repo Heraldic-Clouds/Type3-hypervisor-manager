@@ -89,12 +89,33 @@ func (s *Store) Migrate(ctx context.Context, guacSQL string) error {
 			return e
 		}
 	}
-	b, e := migrations.ReadFile("migrations/001_mea.sql")
+	// Versioned migrations run once each, in file-name order, inside the same
+	// locked transaction. 001 predates tracking and is idempotent.
+	if _, e = tx.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS mea; CREATE TABLE IF NOT EXISTS mea.schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); e != nil {
+		return e
+	}
+	entries, e := migrations.ReadDir("migrations")
 	if e != nil {
 		return e
 	}
-	if _, e = tx.Exec(ctx, string(b)); e != nil {
-		return e
+	for _, entry := range entries {
+		var done bool
+		if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mea.schema_migrations WHERE version=$1)`, entry.Name()).Scan(&done); e != nil {
+			return e
+		}
+		if done {
+			continue
+		}
+		b, e := migrations.ReadFile("migrations/" + entry.Name())
+		if e != nil {
+			return e
+		}
+		if _, e = tx.Exec(ctx, string(b)); e != nil {
+			return fmt.Errorf("migration %s: %w", entry.Name(), e)
+		}
+		if _, e = tx.Exec(ctx, `INSERT INTO mea.schema_migrations(version) VALUES($1)`, entry.Name()); e != nil {
+			return e
+		}
 	}
 	return tx.Commit(ctx)
 }
