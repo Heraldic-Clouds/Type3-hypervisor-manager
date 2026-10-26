@@ -165,8 +165,10 @@ func main() {
 		return
 	}
 	server := api.New(st, c)
+	// The dashboard reads the database even before a GPU host exists.
+	server.Infra = &infra.Service{Store: st, Config: pc}
 	if connect != nil {
-		server.Infra = &infra.Service{Store: st, Config: pc, Type3: func(ctx context.Context, h paid.Host) (infra.Type3, error) { return connect(ctx, h) }}
+		server.Infra.(*infra.Service).Type3 = func(ctx context.Context, h paid.Host) (infra.Type3, error) { return connect(ctx, h) }
 	}
 	app := server.Handler()
 	if os.Getenv("AWS_LAMBDA_RUNTIME_API") != "" {

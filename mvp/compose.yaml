@@ -29,6 +29,21 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       desktop: {condition: service_started}
+  billing:
+    build: .
+    entrypoint: ["/billing"]
+    environment:
+      DATABASE_URL: postgres://mea_owner:${LOCAL_DB_PASSWORD}@postgres:5432/mea?sslmode=disable
+      APP_ORIGIN: http://localhost:5173
+      # Stripe test mode only; live keys are refused by the billing service.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_POWER: ${STRIPE_PRICE_POWER:-}
+      STRIPE_PRICE_ELEET: ${STRIPE_PRICE_ELEET:-}
+    ports: ["127.0.0.1:8082:8082"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      api: {condition: service_started}
   guacd:
     image: guacamole/guacd:1.6.0
   guacamole:
@@ -66,6 +81,7 @@ services:
     ports: ["127.0.0.1:5173:5173"]
     environment:
       VITE_API_TARGET: http://api:8081
+      VITE_BILLING_TARGET: http://billing:8082
       VITE_GUAC_TARGET: http://guacamole:8080
       VITE_POLLING: "true"
     depends_on: [api,guacamole]

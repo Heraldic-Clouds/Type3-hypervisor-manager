@@ -54,6 +54,9 @@ type Client struct {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, form url.Values, idempotency string, out any) error {
+	if c.Key == "" {
+		return errors.New("Stripe is not configured for this deployment")
+	}
 	if !strings.HasPrefix(c.Key, "sk_test_") && !strings.HasPrefix(c.Key, "rk_test_") {
 		// Live billing stays disabled until explicitly configured and approved.
 		return errors.New("Stripe live mode is disabled for this deployment")

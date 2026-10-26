@@ -187,6 +187,9 @@ func (s *Service) client(ctx context.Context) (Type3, error) {
 	if e != nil {
 		return nil, e
 	}
+	if s.Type3 == nil {
+		return nil, httpError{409, "Power and Eleet are not deployed in this environment"}
+	}
 	if h.State != "running" || !h.Ready || h.PrivateIP == nil {
 		return nil, httpError{409, "The GPU host is not running. Start it first."}
 	}
