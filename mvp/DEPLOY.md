@@ -130,6 +130,17 @@ desktops occupied continuously, before substantial transfer and tax.
 The $150 budget is account-wide because this linked account cannot activate
 cost-allocation tags. Budget alerts are not hard spending limits.
 
+## Shared desktops
+
+Verified Newbie users can borrow a shared machine, one at a time; the first is
+the home-hosted XP25-AI, reached over VNC through a private relay. Leases use
+the normal desktop session, heartbeat, idle and lifetime rules, do not count
+toward the EC2 cap, and end without touching the machine. Operators register
+shared desktops with the IAM-only control action `shared-desktop`. The relay
+and its IAM user are not in this Terraform configuration. See
+docs/SHARED_DESKTOPS.md for the design, the registration call, the relay
+resources and the 2026-10-26 deployment record.
+
 ## Tests
 
     go test ./...
