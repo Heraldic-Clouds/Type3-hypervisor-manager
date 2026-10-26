@@ -6,7 +6,7 @@ if($LASTEXITCODE -ne 0 -or $account.Trim() -ne '681773521032'){throw 'Live test 
 & ./scripts/build.ps1
 $config=aws lambda get-function-configuration --function-name mea-staging-migrate --profile $Profile --output json|ConvertFrom-Json
 $create=@{FunctionName='mea-staging-verification-helper';Runtime='provided.al2023';Role=$config.Role;Handler='bootstrap';Timeout=30;MemorySize=256;VpcConfig=@{SubnetIds=$config.VpcConfig.SubnetIds;SecurityGroupIds=$config.VpcConfig.SecurityGroupIds};Environment=$config.Environment;Tags=@{Project='MiseEnAbyme';Purpose='temporary-verification'}}
-$create|ConvertTo-Json -Depth 10|Set-Content -LiteralPath build/dbops-config.json -Encoding utf8NoBOM
+[IO.File]::WriteAllText((Join-Path (Get-Location) 'build/dbops-config.json'),($create|ConvertTo-Json -Depth 10))
 $created=$false
 $originalProfile=$env:AWS_PROFILE
 try{

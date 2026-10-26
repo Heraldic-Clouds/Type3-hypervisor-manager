@@ -7,7 +7,7 @@ if(!(Test-Path -LiteralPath 'infra/staging.auto.tfvars')){Copy-Item infra/stagin
 New-Item -ItemType Directory -Path build -Force |Out-Null
 $functions=aws lambda list-functions --profile stratus2-tantalus --query 'Functions[].FunctionName' --output text
 if($functions -match 'mea-staging-control'){
- '{"action":"active-sessions"}'|Set-Content -LiteralPath build/drain-request.json -Encoding utf8NoBOM
+ [IO.File]::WriteAllText((Join-Path (Get-Location) 'build/drain-request.json'),'{"action":"active-sessions"}')
  $metadata=aws lambda invoke --function-name mea-staging-control --payload fileb://build/drain-request.json --profile stratus2-tantalus build/drain-result.json --output json|ConvertFrom-Json
  if($metadata.FunctionError){throw 'Unable to verify active sessions; deployment stopped'}
  $drain=Get-Content build/drain-result.json -Raw|ConvertFrom-Json
@@ -32,8 +32,13 @@ if($LASTEXITCODE -ne 0){throw 'Terraform plan failed'}
 if($PlanOnly){Write-Host 'Saved infra/staging.tfplan. No infrastructure changes applied.';return}
 docker @tfArgs apply -input=false staging.tfplan
 if($LASTEXITCODE -ne 0){throw 'Terraform apply failed'}
-aws lambda invoke --function-name mea-staging-migrate --profile stratus2-tantalus build/migrate-result.json --output json|Out-Null
-if((Get-Content build/migrate-result.json -Raw|ConvertFrom-Json).ok -ne $true){throw 'Database migration failed'}
+# Migrations run in one locked transaction; a concurrent watchdog can deadlock it, so retry.
+for($try=1;$try -le 3;$try++){
+ aws lambda invoke --function-name mea-staging-migrate --profile stratus2-tantalus build/migrate-result.json --output json|Out-Null
+ if((Get-Content build/migrate-result.json -Raw|ConvertFrom-Json).ok -eq $true){break}
+ if($try -eq 3){throw 'Database migration failed'}
+ Start-Sleep -Seconds 5
+}
 Push-Location ../../mea-web/newbie
 try{
  npm ci
