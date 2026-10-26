@@ -75,10 +75,10 @@ resource "aws_lambda_function" "database" {
     security_group_ids = [aws_security_group.lambda.id]
   }
   environment {
-    variables = {
+    variables = merge({
       MODE       = each.key, DB_SECRET_ARN = aws_secretsmanager_secret.database[each.key == "migrate" ? "owner" : "app"].arn,
       APP_ORIGIN = local.origin, DESKTOP_CAP = tostring(var.desktop_cap), IDLE_SECONDS = tostring(var.idle_seconds), WARNING_SECONDS = tostring(var.warning_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), GRACE_SECONDS = tostring(var.grace_seconds), SECURE_COOKIES = "true", REQUIRE_VERIFICATION = tostring(var.require_verification), GUAC_SCHEMA = "/var/task/schema/guacamole.sql"
-    }
+    }, each.key == "api" ? local.stream_env : {})
   }
   logging_config {
     log_format = "Text"

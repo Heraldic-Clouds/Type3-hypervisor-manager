@@ -1,0 +1,15 @@
+[Unit]
+Description=MEA XFCE session for the desktop user on :0
+Requires=mea-xorg.service
+After=mea-xorg.service
+
+[Service]
+User=mea
+Environment=DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000
+ExecStartPre=/bin/sh -c 'until xset q >/dev/null 2>&1; do sleep 0.5; done'
+ExecStart=/usr/bin/dbus-run-session /usr/bin/startxfce4
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

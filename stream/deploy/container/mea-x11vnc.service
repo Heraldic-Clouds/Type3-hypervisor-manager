@@ -1,0 +1,16 @@
+# Guacamole fallback: the standard desktop shows the same :0 session over VNC,
+# so switching between Gaming Mode and the standard desktop keeps all windows.
+[Unit]
+Description=VNC view of :0 for the Guacamole fallback
+Requires=mea-xorg.service
+After=mea-desktop.service
+
+[Service]
+User=mea
+EnvironmentFile=/etc/mea-stream/vnc.env
+ExecStart=/bin/sh -c 'exec /usr/bin/x11vnc -display :0 -forever -shared -noxdamage -listen "$VNC_LISTEN" -rfbport 5900 -passwdfile rm:/etc/mea-stream/vnc.pass'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -366,8 +366,12 @@ func (g *Gateway) adminDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// putLimits merges the fields given into the current limits, so
+// {"maxSessions":2} leaves the GPU thresholds as they are.
 func (g *Gateway) putLimits(w http.ResponseWriter, r *http.Request) {
-	var l Limits
+	g.mu.Lock()
+	l := g.limits
+	g.mu.Unlock()
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&l); err != nil || l.MaxSessions < 0 {
 		http.Error(w, "bad limits", http.StatusBadRequest)
 		return

@@ -344,7 +344,7 @@ func TestCapacityAndAdmin(t *testing.T) {
 	if res.StatusCode != 401 {
 		t.Fatal("metrics without token")
 	}
-	req, _ := http.NewRequest("PUT", admin.URL+"/v1/limits", bytes.NewReader([]byte(`{"maxSessions":2}`)))
+	req, _ := http.NewRequest("PUT", admin.URL+"/v1/limits", bytes.NewReader([]byte(`{"maxSessions":2,"draining":false}`)))
 	req.Header.Set("Authorization", "Bearer admin-secret")
 	res, _ = http.DefaultClient.Do(req)
 	if res.StatusCode != 200 {

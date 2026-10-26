@@ -85,7 +85,7 @@ func main() {
 		}
 		return
 	}
-	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400), Stream: streamConfig()}
+	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400), Stream: streamConfig(ctx)}
 	if c.Local {
 		b, e := os.ReadFile(env("GUAC_SCHEMA", "/schema/guacamole.sql"))
 		if e != nil {
@@ -137,8 +137,29 @@ func main() {
 
 // streamConfig enables Gaming Mode when MEA_STREAM_PRIVATE_KEY (or its
 // Secrets Manager ARN, resolved by the deployment) and the GPU host are set.
-func streamConfig() *api.StreamConfig {
-	k := os.Getenv("MEA_STREAM_PRIVATE_KEY")
+// streamConfig enables Gaming Mode. In AWS the signing key and TURN secret
+// come from the Secrets Manager secret MEA_STREAM_SECRET_ARN, JSON
+// {"PrivateKey": "...", "TURNSecret": "..."}; MEA_STREAM_PRIVATE_KEY and
+// MEA_TURN_SECRET are for local development.
+func streamConfig(ctx context.Context) *api.StreamConfig {
+	k, turn := os.Getenv("MEA_STREAM_PRIVATE_KEY"), os.Getenv("MEA_TURN_SECRET")
+	if arn := os.Getenv("MEA_STREAM_SECRET_ARN"); arn != "" {
+		cfg, e := config.LoadDefaultConfig(ctx)
+		if e != nil {
+			log.Fatal(e)
+		}
+		out, e := secretsmanager.NewFromConfig(cfg).GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: aws.String(arn)})
+		if e != nil {
+			log.Print("Gaming Mode disabled: stream secret unavailable: ", e)
+			return nil
+		}
+		var secret struct{ PrivateKey, TURNSecret string }
+		if e = json.Unmarshal([]byte(aws.ToString(out.SecretString)), &secret); e != nil {
+			log.Print("Gaming Mode disabled: stream secret is not JSON")
+			return nil
+		}
+		k, turn = secret.PrivateKey, secret.TURNSecret
+	}
 	if k == "" {
 		return nil
 	}
@@ -158,6 +179,6 @@ func streamConfig() *api.StreamConfig {
 	}
 	return &api.StreamConfig{
 		PrivateKey: key, HostID: os.Getenv("MEA_STREAM_HOST_ID"), GatewayURL: os.Getenv("MEA_STREAM_GATEWAY_URL"),
-		STUNURLs: list("MEA_STUN_URLS"), TURNURLs: list("MEA_TURN_URLS"), TURNSecret: os.Getenv("MEA_TURN_SECRET"),
+		STUNURLs: list("MEA_STUN_URLS"), TURNURLs: list("MEA_TURN_URLS"), TURNSecret: turn,
 	}
 }

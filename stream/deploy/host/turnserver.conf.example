@@ -1,0 +1,17 @@
+# /etc/turnserver.conf: coturn on the GPU host, only for networks that block
+# UDP 47998. Runs only while the host runs; no extra always-on server.
+listening-port=3478
+tls-listening-port=5349
+external-ip=<public IPv4>
+realm=miseenaby.me
+use-auth-secret
+static-auth-secret=<same value as MEA_TURN_SECRET in the MEA API>
+min-port=49160
+max-port=49200
+no-multicast-peers
+denied-peer-ip=0.0.0.0-255.255.255.255
+allowed-peer-ip=<public IPv4>
+no-cli
+fingerprint
+cert=/var/lib/mea-stream/acme/turn.crt
+pkey=/var/lib/mea-stream/acme/turn.key
