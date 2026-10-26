@@ -10,3 +10,23 @@ mvp/packer/manifest.json
 mvp/test-results/
 *.zip
 __pycache__/
+
+# Build output
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Local state and secrets
+/data/
+/config/api-keys.json
+/config/*.key
+/config/*.crt
+/config/*.pem
+.env
+
+# Editors
+.vscode/*
+!.vscode/launch.json
+.idea/
