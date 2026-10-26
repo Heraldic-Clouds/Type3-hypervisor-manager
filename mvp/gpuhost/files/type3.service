@@ -1,0 +1,19 @@
+[Unit]
+Description=Type3 LXD orchestration engine
+After=snap.lxd.daemon.service mea-host-boot.service
+Requires=snap.lxd.daemon.service
+
+[Service]
+# Root on the host is needed for the LXD socket and to set persistent home
+# ownership to each container's isolated UID range.
+EnvironmentFile=/etc/type3/type3.env
+ExecStart=/usr/local/bin/type3
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ProtectSystem=full
+PrivateTmp=yes
+ReadWritePaths=/var/lib/type3 /var/log /mnt/mea-efs
+
+[Install]
+WantedBy=multi-user.target

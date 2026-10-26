@@ -1,0 +1,13 @@
+{
+  "agent": {"metrics_collection_interval": 60},
+  "metrics": {
+    "namespace": "MEA/GPUHost",
+    "append_dimensions": {"InstanceId": "${aws:InstanceId}"},
+    "metrics_collected": {
+      "cpu": {"measurement": ["usage_active"], "totalcpu": true},
+      "mem": {"measurement": ["used_percent"]},
+      "disk": {"measurement": ["used_percent"], "resources": ["/"]},
+      "nvidia_gpu": {"measurement": ["utilization_gpu", "memory_used", "memory_total", "encoder_stats_session_count", "encoder_stats_average_fps"]}
+    }
+  }
+}

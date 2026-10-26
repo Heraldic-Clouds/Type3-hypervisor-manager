@@ -1,0 +1,43 @@
+#cloud-config
+# Mise En Abyme Power/Eleet desktop image (published as mea-desktop-24.04).
+# The customer account "mea" is created per container by Type3; its home is
+# the subscriber's EFS directory, so session defaults come from /etc, not /home.
+package_update: true
+package_upgrade: true
+packages:
+  - xfce4
+  - xfce4-terminal
+  - xfce4-goodies
+  - xrdp
+  - xorgxrdp
+  - dbus-x11
+  - x11-xserver-utils
+  - xprintidle
+  - mesa-utils
+  - fonts-dejavu-core
+  - ca-certificates
+  - curl
+  - gnupg
+  - unattended-upgrades
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-mea.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      KbdInteractiveAuthentication no
+  - path: /etc/mea-desktop-release
+    content: |
+      MEA_DESKTOP=24.04-xfce
+runcmd:
+  # Firefox from Mozilla's APT repository (snaps need nesting, which stays off).
+  - install -d -m 0755 /etc/apt/keyrings
+  - curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg -o /etc/apt/keyrings/packages.mozilla.org.asc
+  - echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list
+  - printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' > /etc/apt/preferences.d/mozilla
+  - apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y firefox
+  - update-alternatives --set x-session-manager /usr/bin/xfce4-session
+  - sed -i 's/^max_bpp=.*/max_bpp=24/' /etc/xrdp/xrdp.ini
+  - adduser xrdp ssl-cert
+  - systemctl enable xrdp
+  - systemctl enable --now unattended-upgrades
+  - [passwd, -l, root]

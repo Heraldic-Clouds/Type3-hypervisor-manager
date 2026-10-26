@@ -1,0 +1,13 @@
+[Unit]
+Description=Mise En Abyme GPU host boot (network policy, EFS, LXD, Type3)
+Wants=network-online.target snap.lxd.daemon.service
+After=network-online.target snap.lxd.daemon.service cloud-final.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/mea-host-boot
+TimeoutStartSec=2400
+
+[Install]
+WantedBy=multi-user.target

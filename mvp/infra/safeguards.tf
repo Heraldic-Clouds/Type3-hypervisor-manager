@@ -1,7 +1,7 @@
 resource "aws_budgets_budget" "monthly" {
   name         = "${local.prefix}-monthly"
   budget_type  = "COST"
-  limit_amount = "150"
+  limit_amount = var.budget_limit
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
   notification {

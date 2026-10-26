@@ -2,7 +2,7 @@
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 root=Path(__file__).resolve().parents[1]
-for name in ("api","worker","dbops","admin"):
+for name in ("api","worker","dbops","admin","billing"):
     folder=root/"build"/name
     if not folder.exists(): continue
     with ZipFile(root/"build"/f"{name}.zip","w",ZIP_DEFLATED) as archive:

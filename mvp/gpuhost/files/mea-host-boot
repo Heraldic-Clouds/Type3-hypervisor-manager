@@ -1,0 +1,157 @@
+#!/bin/bash
+# Runs on every boot of the GPU host. Idempotent: on the first boot it creates
+# the LXD storage pool on the persistent data volume and builds the desktop
+# image; on later boots (after StopInstances/StartInstances) it only reapplies
+# network policy, remounts EFS and restarts Type3 against the existing state.
+set -euo pipefail
+exec > >(tee -a /var/log/mea-host-boot.log) 2>&1
+echo "mea-host-boot $(date -u +%FT%TZ)"
+install -d -m 700 /run/mea
+rm -f /run/mea/host-ready
+
+imds() {
+  local token
+  token=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+  curl -fsS -H "X-aws-ec2-metadata-token: $token" "http://169.254.169.254/latest/$1"
+}
+REGION=$(imds meta-data/placement/region)
+IP=$(imds meta-data/local-ipv4)
+VPC_CIDR=$(imds "meta-data/network/interfaces/macs/$(imds meta-data/mac)/vpc-ipv4-cidr-block")
+# Launch-template user data is a small JSON document written by Terraform.
+CONF=$(imds user-data)
+PREFIX=$(jq -r .prefix <<<"$CONF")
+EFS=$(jq -r .efs <<<"$CONF")
+KEY_SECRET=$(jq -r .type3Secret <<<"$CONF")
+LAMBDA_CIDR=$(jq -r .controlCidr <<<"$CONF")
+GUAC_CIDR=$(jq -r .guacCidr <<<"$CONF")
+DATA_SIZE=$(jq -r .dataGiB <<<"$CONF")
+
+# Network policy. Containers reach the internet only: never the instance
+# metadata service, the VPC (database, other hosts) or the host's own
+# services. Only the control plane reaches Type3 and only Guacamole reaches
+# the per-container RDP proxy ports.
+# Only MEA's own table is replaced: LXD manages its bridge NAT in its own table.
+cat > /etc/mea/nftables.conf <<NFT
+table inet mea {}
+delete table inet mea
+table inet mea {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif lo accept
+    ct state established,related accept
+    iifname "lxdbr0" udp dport { 53, 67 } accept
+    iifname "lxdbr0" tcp dport 53 accept
+    iifname "lxdbr0" drop
+    ip saddr $LAMBDA_CIDR tcp dport 7443 accept
+    ip saddr $GUAC_CIDR tcp dport 40000-40999 accept
+    icmp type echo-request limit rate 5/second accept
+  }
+  chain forward {
+    type filter hook forward priority 0; policy accept;
+    iifname "lxdbr0" ip daddr { 169.254.0.0/16, $VPC_CIDR, 10.64.0.0/16 } drop
+    iifname "lxdbr0" ip6 daddr fd00:ec2::254 drop
+  }
+}
+NFT
+nft -f /etc/mea/nftables.conf
+
+# Subscriber files: one EFS file system, one 0700 directory per subscriber.
+if ! mountpoint -q /mnt/mea-efs; then
+  for n in $(seq 1 30); do
+    mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport \
+      "$EFS.efs.$REGION.amazonaws.com:/" /mnt/mea-efs && break
+    sleep 5
+  done
+fi
+mountpoint -q /mnt/mea-efs
+install -d -m 711 -o root -g root /mnt/mea-efs/users
+
+# LXD on the persistent EBS data volume (never the instance-store NVMe).
+snap start lxd || true
+lxd waitready --timeout=120
+if ! lxc storage show default >/dev/null 2>&1; then
+  DEV=""
+  for d in /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_*; do
+    [[ "$d" == *-part* ]] && continue
+    real=$(readlink -f "$d")
+    [[ "$(lsblk -no MOUNTPOINTS "$real" | tr -d '[:space:]')" == "" ]] || continue
+    lsblk -no PKNAME "$real" | grep -q . && continue
+    size=$(( $(blockdev --getsize64 "$real") / 1073741824 ))
+    if [[ "$size" -ge "$DATA_SIZE" ]]; then DEV=$real; break; fi
+  done
+  [[ -n "$DEV" ]] || { echo "persistent data volume not found"; exit 1; }
+  cat <<PRESEED | lxd init --preseed
+networks:
+  - name: lxdbr0
+    type: bridge
+    config: {ipv4.address: 10.64.0.1/16, ipv4.nat: "true", ipv6.address: none}
+storage_pools:
+  - name: default
+    driver: zfs
+    config: {source: $DEV}
+profiles:
+  - name: default
+    devices:
+      root: {type: disk, path: /, pool: default}
+      eth0: {type: nic, name: eth0, network: lxdbr0}
+PRESEED
+fi
+# LXD's API stays on the unix socket; it is never bound to a network address.
+lxc config unset core.https_address || true
+
+if ! lxc image info mea-desktop-24.04 >/dev/null 2>&1; then
+  echo "building mea-desktop-24.04"
+  BUILD=mea-desktop-build
+  lxc delete --force "$BUILD" >/dev/null 2>&1 || true
+  lxc launch ubuntu:24.04 "$BUILD" -c security.privileged=false -c security.nesting=false \
+    -c cloud-init.user-data="$(cat /etc/mea/desktop.cloud-init.yaml)"
+  timeout 1800 lxc exec "$BUILD" -- cloud-init status --wait || true
+  lxc exec "$BUILD" -- test -f /etc/mea-desktop-release
+  lxc exec "$BUILD" -- bash -c 'apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* && truncate -s0 /etc/machine-id && cloud-init clean --logs'
+  lxc stop "$BUILD"
+  lxc publish "$BUILD" --alias mea-desktop-24.04 description="Mise En Abyme desktop, Ubuntu 24.04 XFCE/XRDP ($(date -u +%F))"
+  lxc delete "$BUILD"
+fi
+
+# Type3: TLS on the private address, API key hash from Secrets Manager.
+if [[ ! -f /etc/type3/tls.crt ]]; then
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+    -subj "/CN=type3.$PREFIX" -addext "subjectAltName=IP:$IP" \
+    -keyout /etc/type3/tls.key -out /etc/type3/tls.crt
+  chmod 600 /etc/type3/tls.key
+fi
+FP=$(openssl x509 -in /etc/type3/tls.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f)
+KEY=$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$KEY_SECRET" --query SecretString --output text | jq -r .apiKey)
+HASH=$(printf %s "$KEY" | sha256sum | cut -d' ' -f1)
+unset KEY
+umask 077
+cat > /etc/type3/type3.env <<ENV
+TYPE3_LISTEN_ADDR=$IP:7443
+TYPE3_TLS_CERT_FILE=/etc/type3/tls.crt
+TYPE3_TLS_KEY_FILE=/etc/type3/tls.key
+TYPE3_STATE_FILE=/var/lib/type3/state.json
+TYPE3_PROFILES_FILE=/etc/type3/profiles.json
+TYPE3_API_KEYS=mea:admin:$HASH
+TYPE3_AUDIT_LOG_FILE=/var/log/type3-audit.log
+TYPE3_LOCAL_AGENT=true
+TYPE3_USER_DATA_ROOT=/mnt/mea-efs/users
+TYPE3_RDP_LISTEN_ADDRESS=$IP
+TYPE3_MAX_CONTAINERS_PER_GPU=4
+TYPE3_CPU_OVERCOMMIT=1.0
+TYPE3_MEMORY_OVERCOMMIT=1.0
+AWS_REGION=$REGION
+ENV
+umask 022
+# The control plane pins this certificate fingerprint (read by the worker).
+aws ssm put-parameter --region "$REGION" --name "/$PREFIX/type3/fingerprint" --type String --overwrite --value "$FP" >/dev/null
+systemctl restart type3
+for n in $(seq 1 30); do
+  curl -fsSk "https://$IP:7443/api/v1/health" >/dev/null && break
+  sleep 2
+done
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json || true
+nvidia-smi -L || echo "nvidia-smi unavailable"
+touch /run/mea/host-ready
+echo "host ready"
