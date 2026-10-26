@@ -14,6 +14,7 @@ import (
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/api"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/control"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/streamtoken"
 	"github.com/aws/aws-lambda-go/events"
 	lambdaruntime "github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -84,7 +85,7 @@ func main() {
 		}
 		return
 	}
-	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400)}
+	c := api.Config{Origin: env("APP_ORIGIN", "http://localhost:5173"), GuacKey: key, Secure: env("SECURE_COOKIES", "true") == "true", RequireVerification: env("REQUIRE_VERIFICATION", "true") == "true", Local: env("LOCAL_MODE", "false") == "true", Cap: number("DESKTOP_CAP", 2), IdleSeconds: number("IDLE_SECONDS", 1200), WarningSeconds: number("WARNING_SECONDS", 900), GraceSeconds: number("GRACE_SECONDS", 300), LifetimeSeconds: number("LIFETIME_SECONDS", 14400), Stream: streamConfig()}
 	if c.Local {
 		b, e := os.ReadFile(env("GUAC_SCHEMA", "/schema/guacamole.sql"))
 		if e != nil {
@@ -132,4 +133,31 @@ func main() {
 		fmt.Println("MEA API listening on :8081")
 	}
 	log.Fatal(http.ListenAndServe(":8081", app))
+}
+
+// streamConfig enables Gaming Mode when MEA_STREAM_PRIVATE_KEY (or its
+// Secrets Manager ARN, resolved by the deployment) and the GPU host are set.
+func streamConfig() *api.StreamConfig {
+	k := os.Getenv("MEA_STREAM_PRIVATE_KEY")
+	if k == "" {
+		return nil
+	}
+	key, e := streamtoken.ParsePrivateKey(k)
+	if e != nil {
+		log.Print("Gaming Mode disabled: bad MEA_STREAM_PRIVATE_KEY")
+		return nil
+	}
+	list := func(k string) []string {
+		var out []string
+		for _, s := range strings.Split(os.Getenv(k), ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return &api.StreamConfig{
+		PrivateKey: key, HostID: os.Getenv("MEA_STREAM_HOST_ID"), GatewayURL: os.Getenv("MEA_STREAM_GATEWAY_URL"),
+		STUNURLs: list("MEA_STUN_URLS"), TURNURLs: list("MEA_TURN_URLS"), TURNSecret: os.Getenv("MEA_TURN_SECRET"),
+	}
 }

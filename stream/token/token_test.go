@@ -114,3 +114,23 @@ func TestKeyParsing(t *testing.T) {
 		t.Fatal("bad key accepted")
 	}
 }
+
+// TestGoldenVector pins the wire format shared with mvp/internal/streamtoken,
+// which mints tokens in the MEA API.
+func TestGoldenVector(t *testing.T) {
+	const golden = "eyJ2IjoxLCJqdGkiOiIwMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZiIsInN1YiI6InVzZXItMSIsImRzayI6ImRlc2stMSIsInNpZCI6InNlc3MtMSIsImhvc3QiOiJob3N0LTEiLCJlbnQiOiJlbGVldCIsInByb2YiOiJiYWxhbmNlZCIsImlhdCI6MTgwMDAwMDAwMCwiZXhwIjoxODAwMDAwMDYwfQ.CiUvw17ZhtseAxGLr_oV9WbnARdZdtTYEwdOgbuzoTvwNn8xRYKOrfbYCK4rlKkHPmcK9Bd2HNvqbGT-R_DOBg"
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i)
+	}
+	priv := ed25519.NewKeyFromSeed(seed)
+	v := &Verifier{Public: priv.Public().(ed25519.PublicKey), Host: "host-1", Now: func() time.Time { return time.Unix(1_800_000_010, 0) }}
+	c, err := v.Verify(golden)
+	if err != nil || c.User != "user-1" || c.Desktop != "desk-1" || c.Profile != "balanced" {
+		t.Fatal(c, err)
+	}
+	tok, _, _ := Mint(priv, c, time.Unix(1_800_000_000, 0))
+	if tok != golden {
+		t.Fatalf("wire format changed:\n%s", tok)
+	}
+}
