@@ -36,7 +36,10 @@ type Config struct {
 	NewVideo func() media.VideoSource
 	// NewAudio returns the audio backend, or nil to stream video only.
 	NewAudio func() media.AudioSource
-	Injector *input.Injector // nil disables input (read-only desktops)
+	// ScreenSize reports the desktop's current resolution. The stream keeps
+	// its aspect ratio and is never scaled up; nil streams at the profile size.
+	ScreenSize func() (w, h int)
+	Injector   *input.Injector // nil disables input (read-only desktops)
 
 	Log *slog.Logger
 	Now func() time.Time
@@ -140,6 +143,11 @@ func (a *Agent) handle(parent context.Context, c net.Conn) {
 		Display: a.cfg.Display,
 	}
 	cfg.W, cfg.H = min(cfg.W, prof.W), min(cfg.H, prof.H)
+	if a.cfg.ScreenSize != nil {
+		if dw, dh := a.cfg.ScreenSize(); dw > 0 && dh > 0 {
+			cfg.W, cfg.H = fitSize(dw, dh, cfg.W, cfg.H)
+		}
+	}
 	cfg.FPS, cfg.Kbps = min(cfg.FPS, prof.FPS), min(cfg.Kbps, prof.MaxKbps)
 	cfg.W, cfg.H = cfg.W&^1, cfg.H&^1 // encoders need even sizes
 
@@ -323,4 +331,15 @@ func (a *Agent) readLoop(ctx context.Context, l *link, cfg media.Config) {
 			return
 		}
 	}
+}
+
+// fitSize scales a w×h desktop down to fit maxW×maxH, keeping its aspect ratio.
+func fitSize(w, h, maxW, maxH int) (int, int) {
+	if w <= maxW && h <= maxH {
+		return w, h
+	}
+	if w*maxH > h*maxW {
+		return maxW, max(2, h*maxW/w)
+	}
+	return max(2, w*maxH/h), maxH
 }

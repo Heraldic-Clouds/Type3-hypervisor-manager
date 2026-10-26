@@ -125,7 +125,8 @@ func run(log *slog.Logger) error {
 	} else {
 		log.Warn("gamepads disabled: /dev/uinput not available", "err", err)
 	}
-	inj := &input.Injector{Desktop: &lazyX11{display: display}, Pads: pads, Log: log}
+	x11 := &lazyX11{display: display}
+	inj := &input.Injector{Desktop: x11, Pads: pads, Log: log}
 	defer inj.Close()
 
 	a := agent.New(agent.Config{
@@ -136,11 +137,19 @@ func run(log *slog.Logger) error {
 			}
 			return &media.FFmpeg{Encoder: ffEnc, Log: log}
 		},
+		ScreenSize: func() (int, int) {
+			x, err := x11.get()
+			if err != nil {
+				return 0, 0
+			}
+			return x.Size()
+		},
 		NewAudio: func() media.AudioSource {
 			if !env.Bool("MEA_AUDIO", true) {
 				return nil
 			}
-			return &media.Audio{Source: env.String("MEA_AUDIO_SOURCE", ""), Log: log}
+			// MEA_AUDIO_TEST_PATTERN=1 plays a 440 Hz tone, for end-to-end tests.
+			return &media.Audio{Source: env.String("MEA_AUDIO_SOURCE", ""), TestPattern: env.Bool("MEA_AUDIO_TEST_PATTERN", false), Log: log}
 		},
 	})
 	ln, err := net.Listen("tcp", env.String("MEA_AGENT_LISTEN", ":47100"))

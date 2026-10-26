@@ -239,3 +239,17 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition not met")
 }
+
+func TestFitSize(t *testing.T) {
+	cases := [][6]int{
+		{1280, 720, 1920, 1080, 1280, 720},   // never upscale
+		{2560, 1440, 1920, 1080, 1920, 1080}, // same aspect
+		{1920, 1200, 1920, 1080, 1728, 1080}, // 16:10 into 16:9
+		{3440, 1440, 1920, 1080, 1920, 803},  // ultrawide
+	}
+	for _, c := range cases {
+		if w, h := fitSize(c[0], c[1], c[2], c[3]); w != c[4] || h != c[5] {
+			t.Errorf("fitSize(%d,%d,%d,%d) = %d,%d want %d,%d", c[0], c[1], c[2], c[3], w, h, c[4], c[5])
+		}
+	}
+}

@@ -264,6 +264,14 @@ func (g *Gateway) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	log := g.log.With("sid", claims.Session, "user", claims.User, "desktop", claims.Desktop)
 
+	// An unknown desktop is a 404 even when the host is full.
+	addr, err := g.cfg.Registry.Lookup(claims.Desktop)
+	if err != nil {
+		g.rejected.Add(1)
+		log.Warn("agent lookup", "err", err)
+		fail(w, http.StatusNotFound, protocol.CodeAgentDown, "desktop is not running on this host")
+		return
+	}
 	g.mu.Lock()
 	prev := g.byDesktop[claims.Desktop]
 	active := len(g.sessions)
@@ -286,13 +294,6 @@ func (g *Gateway) createSession(w http.ResponseWriter, r *http.Request) {
 		prev.Close(code, "replaced by a newer connection")
 	}
 
-	addr, err := g.cfg.Registry.Lookup(claims.Desktop)
-	if err != nil {
-		g.rejected.Add(1)
-		log.Warn("agent lookup", "err", err)
-		fail(w, http.StatusNotFound, protocol.CodeAgentDown, "desktop is not running on this host")
-		return
-	}
 	offerCodecs := codecsInSDP(req.SDP)
 	clientCodecs := offerCodecs
 	if len(hello.Codecs) > 0 {
