@@ -11,7 +11,9 @@ import (
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/mvp/internal/store"
 	"github.com/jackc/pgx/v5"
 	"net"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,6 +32,13 @@ type Request struct {
 	// Billing carries a database operation for the billing function, which
 	// has internet access for Stripe but no route to the private database.
 	Billing *billing.Call `json:"billing,omitempty"`
+	// Shared desktop registration ("shared-desktop"), invoked only by operators through IAM.
+	Kind        string            `json:"kind,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Protocol    string            `json:"protocol,omitempty"`
+	Parameters  map[string]string `json:"parameters,omitempty"`
+	Enabled     *bool             `json:"enabled,omitempty"`
 }
 type Job struct {
 	ID          string    `json:"id"`
@@ -43,14 +52,15 @@ type Mail struct {
 	Payload json.RawMessage `json:"payload"`
 }
 type Result struct {
-	Jobs  []Job  `json:"jobs,omitempty"`
-	Mails []Mail `json:"mails,omitempty"`
-	Ready bool   `json:"ready"`
-	Skip  bool   `json:"skip"`
-	Count int    `json:"count"`
-	Billing *billing.Reply `json:"billing,omitempty"`
-	Plan    *paid.Plan     `json:"plan,omitempty"`
-	Summary map[string]any `json:"summary,omitempty"`
+	Jobs         []Job          `json:"jobs,omitempty"`
+	Mails        []Mail         `json:"mails,omitempty"`
+	Ready        bool           `json:"ready"`
+	Skip         bool           `json:"skip"`
+	Count        int            `json:"count"`
+	Billing      *billing.Reply `json:"billing,omitempty"`
+	Plan         *paid.Plan     `json:"plan,omitempty"`
+	Summary      map[string]any `json:"summary,omitempty"`
+	ConnectionID int            `json:"connectionId,omitempty"`
 }
 type Service struct {
 	Store                     *store.Store
@@ -141,6 +151,12 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e != nil {
 			return result, e
 		}
+		// A shared lease owns no machine: with its permission revoked and sessions
+		// closed it is finished, and its connection is released for the next lease.
+		_, e = tx.Exec(ctx, `UPDATE mea.desktops SET state='terminated',connection_id=NULL,terminated_at=now() WHERE state='terminating' AND kind<>'ubuntu'`)
+		if e != nil {
+			return result, e
+		}
 		_, e = tx.Exec(ctx, `DELETE FROM mea.rate_limits WHERE reset_at<now()-interval '1 day'; DELETE FROM mea.tokens WHERE expires_at<now()-interval '1 day'`)
 		if e != nil {
 			return result, e
@@ -185,7 +201,7 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 		if e = rows.Err(); e != nil {
 			return result, e
 		}
-		e = db.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&result.Count)
+		e = db.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND kind='ubuntu' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&result.Count)
 		return result, e
 	case "claim":
 		tag, e := db.Exec(ctx, `UPDATE mea.desktops SET state='provisioning',execution_arn=$2 WHERE id=$1 AND state='queued'`, r.ID, r.ARN)
@@ -284,7 +300,7 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 			return result, e
 		}
 		defer tx.Rollback(ctx)
-		_, e = tx.Exec(ctx, `DELETE FROM guacamole_connection WHERE connection_id=(SELECT connection_id FROM mea.desktops WHERE id=$1)`, r.ID)
+		_, e = tx.Exec(ctx, `DELETE FROM guacamole_connection WHERE connection_id=(SELECT connection_id FROM mea.desktops WHERE id=$1 AND kind='ubuntu')`, r.ID)
 		if e != nil {
 			return result, e
 		}
@@ -303,6 +319,8 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 	case "mail-failed":
 		_, e := db.Exec(ctx, `UPDATE mea.outbox SET attempts=attempts+1 WHERE id=$1`, r.OutboxID)
 		return result, e
+	case "shared-desktop":
+		return s.sharedDesktop(ctx, r)
 	case "orphans":
 		// Only MEA-owned connections can be removed; upstream/admin connections are preserved.
 		_, e := db.Exec(ctx, `DELETE FROM guacamole_connection c WHERE connection_name LIKE 'MEA %' AND NOT EXISTS(SELECT 1 FROM mea.desktops d WHERE d.connection_id=c.connection_id AND d.state IN ('provisioning','ready','terminating'))`)
@@ -312,3 +330,86 @@ func (s *Service) Handle(ctx context.Context, r Request) (Result, error) {
 	}
 }
 func ConnectionID(i int) string { return strconv.Itoa(i) }
+
+var sharedKind = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
+
+// Connection parameters an operator may set on a shared desktop. Anything else,
+// such as SFTP, drive redirection or recording, is refused.
+var sharedParameters = map[string]bool{"hostname": true, "port": true, "username": true, "password": true,
+	"color-depth": true, "cursor": true, "encodings": true, "read-only": true, "swap-red-blue": true,
+	"disable-copy": true, "disable-paste": true, "clipboard-encoding": true, "autoretry": true,
+	"security": true, "ignore-cert": true, "resize-method": true, "disable-audio": true}
+
+// sharedDesktop creates or updates a shared desktop and its Guacamole connection.
+// Disabling one ends any current lease at the next reconciliation.
+func (s *Service) sharedDesktop(ctx context.Context, r Request) (Result, error) {
+	result := Result{}
+	if !sharedKind.MatchString(r.Kind) || r.Kind == store.Ubuntu {
+		return result, fmt.Errorf("invalid shared desktop kind")
+	}
+	name := strings.TrimSpace(r.Name)
+	if name == "" || len(name) > 64 || strings.HasPrefix(name, "MEA ") {
+		return result, fmt.Errorf("invalid shared desktop name")
+	}
+	if r.Protocol != "vnc" && r.Protocol != "rdp" {
+		return result, fmt.Errorf("unsupported shared desktop protocol")
+	}
+	for k := range r.Parameters {
+		if !sharedParameters[k] {
+			return result, fmt.Errorf("unsupported connection parameter %q", k)
+		}
+	}
+	if r.Parameters["hostname"] == "" || r.Parameters["port"] == "" {
+		return result, fmt.Errorf("hostname and port are required")
+	}
+	enabled := r.Enabled == nil || *r.Enabled
+	tx, e := s.Store.DB.Begin(ctx)
+	if e != nil {
+		return result, e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(739103)"); e != nil {
+		return result, e
+	}
+	var connection int
+	e = tx.QueryRow(ctx, `SELECT connection_id FROM mea.shared_desktops WHERE kind=$1 FOR UPDATE`, r.Kind).Scan(&connection)
+	switch {
+	case errors.Is(e, pgx.ErrNoRows):
+		if e = tx.QueryRow(ctx, `INSERT INTO guacamole_connection(connection_name,protocol,max_connections,max_connections_per_user) VALUES($1,$2,1,1) RETURNING connection_id`, name, r.Protocol).Scan(&connection); e != nil {
+			return result, e
+		}
+		if _, e = tx.Exec(ctx, `INSERT INTO mea.shared_desktops(kind,name,description,connection_id,enabled) VALUES($1,$2,$3,$4,$5)`, r.Kind, name, r.Description, connection, enabled); e != nil {
+			return result, e
+		}
+	case e != nil:
+		return result, e
+	default:
+		if _, e = tx.Exec(ctx, `UPDATE guacamole_connection SET connection_name=$2,protocol=$3,max_connections=1,max_connections_per_user=1 WHERE connection_id=$1`, connection, name, r.Protocol); e != nil {
+			return result, e
+		}
+		if _, e = tx.Exec(ctx, `DELETE FROM guacamole_connection_parameter WHERE connection_id=$1`, connection); e != nil {
+			return result, e
+		}
+		if _, e = tx.Exec(ctx, `UPDATE mea.shared_desktops SET name=$2,description=$3,enabled=$4,updated_at=now() WHERE kind=$1`, r.Kind, name, r.Description, enabled); e != nil {
+			return result, e
+		}
+	}
+	for k, v := range r.Parameters {
+		if _, e = tx.Exec(ctx, `INSERT INTO guacamole_connection_parameter(connection_id,parameter_name,parameter_value) VALUES($1,$2,$3)`, connection, k, v); e != nil {
+			return result, e
+		}
+	}
+	if !enabled {
+		if _, e = tx.Exec(ctx, `UPDATE mea.desktops SET state='terminating' WHERE kind=$1 AND state IN ('queued','provisioning','ready')`, r.Kind); e != nil {
+			return result, e
+		}
+	}
+	if _, e = tx.Exec(ctx, `INSERT INTO mea.audit(action) VALUES($1)`, "shared.configure:"+r.Kind); e != nil {
+		return result, e
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return result, e
+	}
+	result.Ready, result.ConnectionID = enabled, connection
+	return result, nil
+}

@@ -63,6 +63,7 @@ func decode(r *http.Request, v any) error {
 	}
 	return nil
 }
+
 func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serve) }
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -215,15 +216,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 	case "/api/desktops":
 		if r.Method == "GET" {
+			shared, e := s.Store.SharedDesktops(r.Context())
+			if e != nil {
+				return e
+			}
 			d, e := store.ScanDesktop(s.Store.DB.QueryRow(r.Context(), "SELECT "+store.DesktopColumns+" FROM mea.desktops WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1", a.User.ID))
 			if errors.Is(e, pgx.ErrNoRows) {
-				write(w, 200, map[string]any{"desktop": nil})
+				write(w, 200, map[string]any{"desktop": nil, "shared": shared})
 				return nil
 			}
 			if e != nil {
 				return e
 			}
-			write(w, 200, map[string]any{"desktop": d})
+			write(w, 200, map[string]any{"desktop": d, "shared": shared})
 			return nil
 		}
 		if r.Method == "POST" {
@@ -570,11 +575,17 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 	if s.Config.RequireVerification && !a.User.Verified {
 		return fail(403, "Verify your email before creating a desktop")
 	}
-	var b struct{ Tier string }
+	var b struct{ Tier, Kind string }
 	if r.ContentLength != 0 {
 		if e := decode(r, &b); e != nil {
 			return e
 		}
+	}
+	if b.Kind != "" && b.Kind != store.Ubuntu {
+		if b.Tier != "" && !strings.EqualFold(b.Tier, "newbie") {
+			return fail(400, "Shared desktops are not part of a plan")
+		}
+		return s.borrow(w, r, a, b.Kind)
 	}
 	ctx := r.Context()
 	switch strings.ToLower(b.Tier) {
@@ -610,7 +621,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 		return e
 	}
 	var count int
-	if e = tx.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&count); e != nil {
+	if e = tx.QueryRow(ctx, `SELECT count(*) FROM mea.desktops WHERE tier='newbie' AND kind='ubuntu' AND state IN ('queued','provisioning','ready','terminating')`).Scan(&count); e != nil {
 		return e
 	}
 	if count >= s.Config.Cap {
@@ -628,6 +639,70 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, a auth) error {
 		return e
 	}
 	write(w, 202, map[string]any{"desktop": d})
+	return nil
+}
+
+// borrow leases a shared desktop. The lease is ready at once: there is no
+// machine to provision, only a Guacamole permission to grant. Reconciliation
+// ends it with the same idle, disconnect-grace and lifetime rules as an EC2
+// desktop, then revokes the permission and leaves the machine running.
+func (s *Server) borrow(w http.ResponseWriter, r *http.Request, a auth, kind string) error {
+	if s.Config.RequireVerification && !a.User.Verified {
+		return fail(403, "Verify your email before using a shared desktop")
+	}
+	ctx := r.Context()
+	tx, e := s.Store.DB.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	// The same lock as create serializes both kinds of lease for the one-desktop rule.
+	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(739103)"); e != nil {
+		return e
+	}
+	var name string
+	var connection int
+	e = tx.QueryRow(ctx, `SELECT name,connection_id FROM mea.shared_desktops WHERE kind=$1 AND enabled`, kind).Scan(&name, &connection)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return fail(404, "Shared desktop not found")
+	}
+	if e != nil {
+		return e
+	}
+	d, e := store.ScanDesktop(tx.QueryRow(ctx, "SELECT "+store.DesktopColumns+" FROM mea.desktops WHERE user_id=$1 AND state IN ('waiting','queued','provisioning','ready','terminating')", a.User.ID))
+	if e == nil {
+		if d.Kind == kind {
+			write(w, 200, map[string]any{"desktop": d})
+			return nil
+		}
+		return fail(409, "End your current desktop before using "+name+".")
+	}
+	if !errors.Is(e, pgx.ErrNoRows) {
+		return e
+	}
+	var busy bool
+	if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mea.desktops WHERE kind=$1 AND state IN ('waiting','queued','provisioning','ready','terminating'))`, kind).Scan(&busy); e != nil {
+		return e
+	}
+	if busy {
+		return fail(409, name+" is in use by another Newbie. Please try again soon.")
+	}
+	id, op := security.ID(), security.ID()
+	d, e = store.ScanDesktop(tx.QueryRow(ctx, `INSERT INTO mea.desktops(id,user_id,state,operation_id,expires_at,tier,kind,connection_id,ready_at,last_activity,disconnect_at)
+ VALUES($1,$2,'ready',$3,now()+$4::interval,'newbie',$5,$6,now(),now(),now()) RETURNING `+store.DesktopColumns, id, a.User.ID, op, fmt.Sprintf("%d seconds", s.Config.LifetimeSeconds), kind, connection))
+	if e != nil {
+		return e
+	}
+	if _, e = tx.Exec(ctx, `INSERT INTO guacamole_connection_permission(entity_id,connection_id,permission) SELECT entity_id,$2,'READ' FROM mea.users WHERE id=$1 AND NOT disabled ON CONFLICT DO NOTHING`, a.User.ID, connection); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(ctx, `INSERT INTO mea.audit(user_id,desktop_id,action) VALUES($1,$2,'shared.borrow')`, a.User.ID, id); e != nil {
+		return e
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return e
+	}
+	write(w, 201, map[string]any{"desktop": d})
 	return nil
 }
 func (s *Server) destroy(w http.ResponseWriter, r *http.Request, a auth, d store.Desktop) error {

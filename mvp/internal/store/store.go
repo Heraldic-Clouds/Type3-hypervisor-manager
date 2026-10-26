@@ -137,27 +137,58 @@ type User struct {
 	EntityID     int    `json:"-"`
 }
 type Desktop struct {
-	ID           string    `json:"id"`
-	UserID       string    `json:"-"`
-	State        string    `json:"state"`
-	InstanceID   *string   `json:"-"`
-	PrivateIP    *string   `json:"-"`
-	ConnectionID *int      `json:"-"`
-	OperationID  string    `json:"operationId"`
-	LastActivity time.Time `json:"lastActivity"`
-	ExpiresAt    time.Time `json:"expiresAt"`
-	Error        *string   `json:"error,omitempty"`
-	Tier         string    `json:"tier"`
+	ID           string     `json:"id"`
+	UserID       string     `json:"-"`
+	State        string     `json:"state"`
+	InstanceID   *string    `json:"-"`
+	PrivateIP    *string    `json:"-"`
+	ConnectionID *int       `json:"-"`
+	OperationID  string     `json:"operationId"`
+	LastActivity time.Time  `json:"lastActivity"`
+	ExpiresAt    time.Time  `json:"expiresAt"`
+	Error        *string    `json:"error,omitempty"`
+	Tier         string     `json:"tier"`
 	KeepAlive    *time.Time `json:"keepAliveUntil,omitempty"`
+	Kind         string     `json:"kind"`
 }
 
-const DesktopColumns = `id::text,user_id::text,state,instance_id,private_ip,connection_id,operation_id::text,last_activity,expires_at,error,tier,keep_alive_until`
+// Ubuntu is the kind of the disposable per-user EC2 desktop. Any other kind is
+// a lease on a row of mea.shared_desktops.
+const Ubuntu = "ubuntu"
+
+const DesktopColumns = `id::text,user_id::text,state,instance_id,private_ip,connection_id,operation_id::text,last_activity,expires_at,error,tier,keep_alive_until,kind`
 
 func ScanDesktop(row pgx.Row) (Desktop, error) {
 	var d Desktop
-	e := row.Scan(&d.ID, &d.UserID, &d.State, &d.InstanceID, &d.PrivateIP, &d.ConnectionID, &d.OperationID, &d.LastActivity, &d.ExpiresAt, &d.Error, &d.Tier, &d.KeepAlive)
+	e := row.Scan(&d.ID, &d.UserID, &d.State, &d.InstanceID, &d.PrivateIP, &d.ConnectionID, &d.OperationID, &d.LastActivity, &d.ExpiresAt, &d.Error, &d.Tier, &d.KeepAlive, &d.Kind)
 	return d, e
 }
 func (s *Store) Desktop(ctx context.Context, user, id string) (Desktop, error) {
 	return ScanDesktop(s.DB.QueryRow(ctx, "SELECT "+DesktopColumns+" FROM mea.desktops WHERE user_id=$1 AND id=$2", user, id))
+}
+
+type Shared struct {
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Available   bool   `json:"available"`
+}
+
+// SharedDesktops lists enabled shared desktops and whether their seat is free.
+func (s *Store) SharedDesktops(ctx context.Context) ([]Shared, error) {
+	rows, e := s.DB.Query(ctx, `SELECT s.kind,s.name,s.description,NOT EXISTS(SELECT 1 FROM mea.desktops d WHERE d.kind=s.kind AND d.state IN ('waiting','queued','provisioning','ready','terminating'))
+ FROM mea.shared_desktops s WHERE s.enabled ORDER BY s.name`)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	result := []Shared{}
+	for rows.Next() {
+		var d Shared
+		if e = rows.Scan(&d.Kind, &d.Name, &d.Description, &d.Available); e != nil {
+			return nil, e
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
 }
