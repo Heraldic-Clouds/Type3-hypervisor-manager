@@ -2,8 +2,11 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
+	"math"
 	"slices"
+	"strconv"
 )
 
 const (
@@ -118,8 +121,8 @@ type Control struct {
 	Kbps    int    `json:"kbps,omitempty"`
 
 	// ping / pong
-	N  uint64 `json:"n,omitempty"`
-	TS int64  `json:"ts,omitempty"`
+	N  uint64  `json:"n,omitempty"`
+	TS float64 `json:"ts,omitempty"` // sender's clock in ms, echoed verbatim
 
 	// stats (client)
 	DecodeMs float64 `json:"decodeMs,omitempty"`
@@ -141,6 +144,53 @@ type Control struct {
 	Msg    string `json:"msg,omitempty"`
 	Fatal  bool   `json:"fatal,omitempty"`
 	Reason string `json:"reason,omitempty"`
+}
+
+// UnmarshalJSON accepts fractional numbers in integer fields (browsers send
+// performance-derived values such as fps 59.94) by rounding them, so one
+// float never makes a whole control message unreadable.
+func (c *Control) UnmarshalJSON(b []byte) error {
+	type plain Control
+	if err := json.Unmarshal(b, (*plain)(c)); err == nil {
+		return nil
+	}
+	var m map[string]any
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	if err := d.Decode(&m); err != nil {
+		return err
+	}
+	roundNumbers(m)
+	nb, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	*c = Control{}
+	return json.Unmarshal(nb, (*plain)(c))
+}
+
+// intFields are the integer-typed Control and Screen fields.
+var intFields = map[string]bool{
+	"w": true, "h": true, "fps": true, "maxKbps": true, "kbps": true, "n": true,
+	"dropped": true, "targetKbps": true, "code": true, "hz": true,
+}
+
+func roundNumbers(m map[string]any) {
+	for k, e := range m {
+		switch x := e.(type) {
+		case map[string]any:
+			roundNumbers(x)
+		case json.Number:
+			if !intFields[k] {
+				continue
+			}
+			if _, err := x.Int64(); err != nil {
+				if f, err := x.Float64(); err == nil {
+					m[k] = json.Number(strconv.FormatInt(int64(math.Round(f)), 10))
+				}
+			}
+		}
+	}
 }
 
 type Screen struct {

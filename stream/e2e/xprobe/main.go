@@ -1,11 +1,13 @@
 // xprobe prints the X pointer position and the keysyms currently held, so the
 // browser end-to-end test can check that input reached the desktop.
+// "xprobe paint" animates the screen at 60 Hz so the stream carries motion.
 package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -20,6 +22,10 @@ func main() {
 	defer c.Close()
 	setup := xproto.Setup(c)
 	root := setup.DefaultScreen(c).Root
+	if len(os.Args) > 1 && os.Args[1] == "paint" {
+		paint(c, setup.DefaultScreen(c))
+		return
+	}
 	p, err := xproto.QueryPointer(c, root).Reply()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -46,4 +52,19 @@ func main() {
 	json.NewEncoder(os.Stdout).Encode(map[string]any{
 		"x": p.RootX, "y": p.RootY, "buttons": p.Mask >> 8, "keys": keys,
 	})
+}
+
+// paint sweeps a bar across the root window forever.
+func paint(c *xgb.Conn, scr *xproto.ScreenInfo) {
+	gc, _ := xproto.NewGcontextId(c)
+	xproto.CreateGC(c, gc, xproto.Drawable(scr.Root), 0, nil)
+	w, h := int(scr.WidthInPixels), int(scr.HeightInPixels)
+	for i := 0; ; i++ {
+		color := uint32(i*2654435761) & 0xffffff
+		xproto.ChangeGC(c, gc, xproto.GcForeground, []uint32{color})
+		x := (i * 16) % w
+		xproto.PolyFillRectangle(c, xproto.Drawable(scr.Root), gc, []xproto.Rectangle{{X: int16(x), Y: 0, Width: 64, Height: uint16(h)}})
+		xproto.GetInputFocus(c).Reply() // flush and pace
+		time.Sleep(time.Second / 60)
+	}
 }

@@ -114,3 +114,21 @@ func TestVersion(t *testing.T) {
 		t.Fatal(c.Versions())
 	}
 }
+
+// Browsers send performance-derived floats; one must not make the whole
+// message unreadable.
+func TestControlFromBrowser(t *testing.T) {
+	var c Control
+	err := json.Unmarshal([]byte(`{"t":"stats","fps":59.94,"kbps":8123.6,"decodeMs":1.5,"dropped":0,"rttMs":12.25}`), &c)
+	if err != nil || c.FPS != 60 || c.Kbps != 8124 || c.DecodeMs != 1.5 || c.RTTMs != 12.25 {
+		t.Fatalf("%+v %v", c, err)
+	}
+	c = Control{}
+	if err := json.Unmarshal([]byte(`{"t":"ping","n":3,"ts":1234.5678}`), &c); err != nil || c.TS != 1234.5678 || c.N != 3 {
+		t.Fatalf("%+v %v", c, err)
+	}
+	c = Control{}
+	if err := json.Unmarshal([]byte(`{"t":"hello","screen":{"w":1280.4,"h":720,"dpr":1.25,"hz":59.9}}`), &c); err != nil || c.Screen.W != 1280 || c.Screen.Hz != 60 || c.Screen.DPR != 1.25 {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

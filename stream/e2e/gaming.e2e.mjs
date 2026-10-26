@@ -182,6 +182,7 @@ async function main() {
     check(rtp.video?.frames > 0, "video frames decoded", JSON.stringify(rtp.video));
   }
 
+  let m;
   // Absolute mouse: the desktop pointer follows the browser pointer.
   const box = await page.locator(".gaming-surface video").boundingBox();
   // the picture is letterboxed inside the element (object-fit: contain)
@@ -211,14 +212,31 @@ async function main() {
   const overlay = await page.locator(".stats-overlay").innerText();
   check(/1280×720/.test(overlay) && /Mbps/.test(overlay), "stats overlay is live", overlay.replace(/\s+/g, " "));
 
+  // Motion: the picture streams at a real frame rate and bitrate.
+  run("paint", join(BIN, "xprobe"), ["paint"], { DISPLAY });
+  await sleep(4000);
+  m = await metrics();
+  const moving = m.sessions?.[0] ?? {};
+  check(moving.fps >= 25 && moving.kbps > 300, "moving desktop streams at frame rate", `${moving.fps?.toFixed?.(1)} fps, ${moving.kbps?.toFixed?.(0)} kbps, encoder ${moving.encoder}`);
+  const decoded = await page.evaluate(async () => {
+    let f = 0;
+    (await window.__meaPC.getStats()).forEach((s) => { if (s.type === "inbound-rtp" && s.kind === "video") f = s.framesDecoded; });
+    return f;
+  });
+  check(decoded > 60, "browser decodes the moving stream", `${decoded} frames`);
+  procs.find((p) => p.name === "paint")?.p.kill("SIGTERM");
+
   // Profile change is applied live, without reconnecting.
   const before = api.stream;
   await page.getByLabel("Streaming quality").selectOption("economy");
   await sleep(1500);
   check(api.stream === before && (await indicator.innerText()).includes("Streaming"), "profile change applies without reconnect");
 
-  let m = await metrics();
-  check(m.activeSessions === 1, "gateway reports one active session", JSON.stringify(m).slice(0, 160));
+  m = await metrics();
+  check(m.activeSessions === 1, "gateway reports one active session");
+  const sm = m.sessions?.[0] ?? {};
+  check(sm.clientRttMs > 0 && sm.clientFps > 0 && sm.inputEvents > 0, "browser stats, pings and input reach the gateway",
+    `rtt ${sm.clientRttMs} ms, fps ${sm.clientFps}, input ${sm.inputEvents}`);
 
   // A replayed token is refused by the gateway.
   const replay = await fetch(`http://127.0.0.1:${SIGNAL}/v1/sessions`, {
