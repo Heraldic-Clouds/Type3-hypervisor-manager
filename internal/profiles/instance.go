@@ -27,6 +27,8 @@ const (
 	RootDevice  = "root"
 	NICDevice   = "eth0"
 	GPUDevice   = "gpu0"
+	RDPDevice   = "rdp"
+	HomeDevice  = "home"
 	// GuestUser is the customer account created inside every container.
 	GuestUser = "mea"
 )
@@ -45,6 +47,10 @@ type InstanceSpec struct {
 	IdmapIsolated bool
 	PortIsolation bool
 	SpecHash      string
+	// RDPListen, when set, is the host address ("tcp:10.84.0.12:40001") that
+	// an LXD proxy device forwards to the container's XRDP on 127.0.0.1:3389.
+	// It lets Guacamole reach the desktop without routing the LXD bridge.
+	RDPListen string
 }
 
 // BuildInstance returns the InstancesPost for spec. Containers are always
@@ -79,6 +85,9 @@ func BuildInstance(s InstanceSpec) api.InstancesPost {
 		RootDevice: RootDisk(s.StoragePool, s.Resources.DiskGiB),
 		NICDevice:  NIC(s.Network, s.PortIsolation),
 	}
+	if s.RDPListen != "" {
+		devices[RDPDevice] = RDPProxy(s.RDPListen)
+	}
 	if s.Tier.GPU {
 		devices[GPUDevice] = gpu.Device(s.GPUPCIAddress)
 		cfg["nvidia.runtime"] = "true"
@@ -99,6 +108,18 @@ func BuildInstance(s InstanceSpec) api.InstancesPost {
 			Description: fmt.Sprintf("Mise En Abyme %s container for %s", s.Tier.Name, s.OwnerID),
 		},
 	}
+}
+
+// RDPProxy forwards a host address to XRDP inside the container.
+func RDPProxy(listen string) map[string]string {
+	return map[string]string{"type": "proxy", "listen": listen, "connect": "tcp:127.0.0.1:3389", "bind": "host"}
+}
+
+// HomeDisk mounts a subscriber's prepared persistent directory at the guest
+// user's home. Type3 builds it from a validated owner ID; the API never
+// accepts a source path.
+func HomeDisk(source string) map[string]string {
+	return map[string]string{"type": "disk", "source": source, "path": "/home/" + GuestUser}
 }
 
 // ResourceConfig returns the CPU and memory limit keys.
@@ -168,6 +189,8 @@ type SpecInput struct {
 	StoragePool string          `json:"storage_pool"`
 	HostID      string          `json:"host_id,omitempty"`
 	SSHKeys     []string        `json:"ssh_keys,omitempty"`
+	RDPPort        int  `json:"rdp_port,omitempty"`
+	PersistentHome bool `json:"persistent_home,omitempty"`
 }
 
 // SpecHash returns a stable hash of a creation request.

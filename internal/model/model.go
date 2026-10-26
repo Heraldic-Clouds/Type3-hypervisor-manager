@@ -123,6 +123,10 @@ type Container struct {
 	Network     string    `json:"network"`
 	StoragePool string    `json:"storage_pool"`
 	Profiles    []string  `json:"profiles"`
+	// RDPPort is the host port proxied to the container's XRDP, 0 if none.
+	RDPPort        int  `json:"rdp_port,omitempty"`
+	PersistentHome bool `json:"persistent_home,omitempty"`
+	HomeReady      bool `json:"home_ready,omitempty"`
 
 	Status    ContainerStatus `json:"status"`
 	LXDStatus string          `json:"lxd_status,omitempty"`

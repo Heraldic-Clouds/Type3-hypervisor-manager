@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/agent"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/audit"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/auth"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/containers"
@@ -31,6 +32,8 @@ type Deps struct {
 	Store        store.Store
 	Log          *slog.Logger
 	MaxBodyBytes int64
+	// Agent is set when Type3 runs on the LXD host (telemetry, logs).
+	Agent *agent.Agent
 }
 
 // API holds the handlers.
@@ -72,6 +75,7 @@ func New(d Deps) http.Handler {
 	route("GET /api/v1/hosts/{id}/resources", viewer, a.hostResources)
 	route("GET /api/v1/hosts/{id}/health", viewer, a.hostHealth)
 	route("GET /api/v1/hosts/{id}/containers", viewer, a.hostContainers)
+	route("GET /api/v1/hosts/{id}/telemetry", viewer, a.hostTelemetry)
 	route("POST /api/v1/hosts/{id}/reconcile", admin, a.reconcileHost)
 	route("DELETE /api/v1/hosts/{id}", admin, a.unregisterHost)
 
@@ -84,6 +88,8 @@ func New(d Deps) http.Handler {
 	route("POST /api/v1/containers/{id}/restart", operator, a.restartContainer)
 	route("DELETE /api/v1/containers/{id}", operator, a.deleteContainer)
 	route("PATCH /api/v1/containers/{id}/resources", operator, a.updateResources)
+	route("POST /api/v1/containers/{id}/credentials", operator, a.setCredentials)
+	route("GET /api/v1/containers/{id}/logs", viewer, a.containerLogs)
 	route("GET /api/v1/containers/{id}/snapshots", viewer, a.listSnapshots)
 	route("POST /api/v1/containers/{id}/snapshots", operator, a.createSnapshot)
 	route("POST /api/v1/containers/{id}/snapshots/{snapshot}/restore", operator, a.restoreSnapshot)

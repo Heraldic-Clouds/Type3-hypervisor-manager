@@ -59,6 +59,12 @@ type Config struct {
 	NICPortIsolation      bool
 	MaxRequestBodyBytes   int64
 	HTTPReadHeaderTimeout time.Duration
+	// LocalAgent enables host-local operations when Type3 runs on the LXD host.
+	LocalAgent bool
+	// UserDataRoot is the host directory (EFS mount) for persistent homes.
+	UserDataRoot string
+	// RDPListenAddress is this host's private IP for RDP proxy devices.
+	RDPListenAddress string
 }
 
 // ImageServer is a remote image source LXD can pull from.
@@ -114,6 +120,9 @@ func Load(dotenvPath string) (*Config, error) {
 		NICPortIsolation:      e.bool("TYPE3_NIC_PORT_ISOLATION", true),
 		MaxRequestBodyBytes:   int64(e.int("TYPE3_MAX_REQUEST_BODY_BYTES", 1<<20)),
 		HTTPReadHeaderTimeout: e.dur("TYPE3_HTTP_READ_HEADER_TIMEOUT", 10*time.Second),
+		LocalAgent:            e.bool("TYPE3_LOCAL_AGENT", false),
+		UserDataRoot:          e.str("TYPE3_USER_DATA_ROOT", ""),
+		RDPListenAddress:      e.str("TYPE3_RDP_LISTEN_ADDRESS", ""),
 		ImageServers: map[string]ImageServer{
 			"ubuntu":         {URL: "https://cloud-images.ubuntu.com/releases/", Protocol: "simplestreams"},
 			"ubuntu-minimal": {URL: "https://cloud-images.ubuntu.com/minimal/releases/", Protocol: "simplestreams"},

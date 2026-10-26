@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/agent"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/audit"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/auth"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/config"
@@ -202,9 +203,14 @@ func serve() error {
 	im := images.NewManager(reg, ops, images.SimpleStreamsLister{UserAgent: version.UserAgent()}, images.Options{
 		Servers: cfg.ImageServers, DefaultServer: cfg.DefaultImageServer, Timeout: cfg.OperationTimeout,
 	}, log)
+	var hostAgent *agent.Agent
+	if cfg.LocalAgent {
+		hostAgent = agent.New(cfg.UserDataRoot)
+	}
 	cm := containers.NewManager(st, reg, im, ops, catalog, containers.Options{
 		GracefulStopTimeout: cfg.GracefulStopTimeout, OperationTimeout: cfg.OperationTimeout,
 		IdmapIsolated: cfg.IdmapIsolated, PortIsolation: cfg.NICPortIsolation,
+		RDPListenAddress: cfg.RDPListenAddress, Agent: hostAgent,
 	}, log)
 
 	bg, stopBG := context.WithCancel(context.Background())
@@ -219,6 +225,7 @@ func serve() error {
 	handler := httpapi.New(httpapi.Deps{
 		Hosts: reg, Containers: cm, Images: im, Ops: ops, Catalog: catalog, Auth: authn,
 		Audit: auditLog, Metrics: met, Store: st, Log: log, MaxBodyBytes: cfg.MaxRequestBodyBytes,
+		Agent: hostAgent,
 	})
 	srv := &http.Server{
 		Addr: cfg.ListenAddr, Handler: handler,

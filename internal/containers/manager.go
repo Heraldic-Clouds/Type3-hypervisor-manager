@@ -14,6 +14,7 @@ import (
 
 	"github.com/canonical/lxd/shared/api"
 
+	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/agent"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/errs"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/gpu"
 	"github.com/Heraldic-Clouds/Type3-hypervisor-manager/internal/hosts"
@@ -41,6 +42,8 @@ type ContainerManager interface {
 	RestoreSnapshot(ctx context.Context, id, snapshot, actor, idemKey string) (model.Operation, error)
 	DeleteSnapshot(ctx context.Context, id, snapshot, actor string) (model.Operation, error)
 	Reconcile(ctx context.Context, hostID string) (ReconcileReport, error)
+	SetPassword(ctx context.Context, id, password string) error
+	Logs(ctx context.Context, id string, lines int) (string, error)
 }
 
 // Options configures the Manager.
@@ -50,6 +53,11 @@ type Options struct {
 	IdmapIsolated       bool
 	PortIsolation       bool
 	Now                 func() time.Time
+	// RDPListenAddress is the host's private address for per-container RDP
+	// proxy devices. Empty disables rdp_port.
+	RDPListenAddress string
+	// Agent performs host-local steps (passwords, persistent homes, logs).
+	Agent *agent.Agent
 }
 
 // Manager implements ContainerManager.
@@ -111,6 +119,10 @@ type CreateRequest struct {
 	SSHKeys        []string `json:"ssh_authorized_keys"`
 	Start          *bool    `json:"start"`
 	IdempotencyKey string   `json:"-"`
+	// RDPPort (40000-40999) exposes XRDP on the host's private address.
+	RDPPort int `json:"rdp_port"`
+	// PersistentHome mounts the owner's host directory (EFS) at /home/mea.
+	PersistentHome bool `json:"persistent_home"`
 }
 
 // CreateResult is returned by Create.
@@ -136,6 +148,17 @@ func (m *Manager) validateCreate(req *CreateRequest) (profiles.Tier, model.Resou
 	}
 	if err := validate.SSHKeys(req.SSHKeys); err != nil {
 		return profiles.Tier{}, model.Resources{}, err
+	}
+	if req.RDPPort != 0 && (req.RDPPort < 40000 || req.RDPPort > 40999 || m.opt.RDPListenAddress == "") {
+		return profiles.Tier{}, model.Resources{}, errs.Invalid("invalid_rdp_port", "rdp_port must be 40000-40999 on a host with an RDP listen address")
+	}
+	if req.PersistentHome {
+		if m.opt.Agent == nil {
+			return profiles.Tier{}, model.Resources{}, errs.Invalid("persistent_home_unavailable", "persistent home storage is not configured on this Type3")
+		}
+		if _, err := m.opt.Agent.HomePath(req.OwnerID); err != nil {
+			return profiles.Tier{}, model.Resources{}, errs.Invalid("invalid_owner_id", "%v", err)
+		}
 	}
 	for field, v := range map[string]string{"network": req.Network, "storage_pool": req.StoragePool, "host_id": req.HostID} {
 		if v != "" {
@@ -182,6 +205,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string) (
 	spec := profiles.SpecInput{
 		OwnerID: req.OwnerID, Tier: tier.Name, Resources: res, Image: img,
 		Network: req.Network, StoragePool: req.StoragePool, HostID: req.HostID, SSHKeys: req.SSHKeys,
+		RDPPort: req.RDPPort, PersistentHome: req.PersistentHome,
 	}
 	hash := profiles.SpecHash(spec)
 
@@ -225,6 +249,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string) (
 		Image: img, Resources: res, GPU: tier.GPU, RootAccess: tier.RootAccess, Ephemeral: tier.Ephemeral,
 		Network: network, StoragePool: pool, Profiles: slices.Clone(tier.LXDProfiles),
 		Status: model.ContainerPending, SpecHash: hash, IdempotencyKey: req.IdempotencyKey,
+		RDPPort: req.RDPPort, PersistentHome: req.PersistentHome,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := m.st.PutContainer(ctx, rec); err != nil {
@@ -236,6 +261,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string) (
 		Name: rec.ID, OwnerID: rec.OwnerID, Tier: tier, Resources: res, Source: source,
 		Network: network, StoragePool: pool, SSHKeys: req.SSHKeys,
 		IdmapIsolated: m.opt.IdmapIsolated, PortIsolation: m.opt.PortIsolation, SpecHash: hash,
+		RDPListen: m.rdpListen(req.RDPPort),
 	})
 
 	op, _, err := m.ops.Submit(operations.Spec{
@@ -340,9 +366,86 @@ func (m *Manager) runCreate(ctx context.Context, p *operations.Progress, rec mod
 			return nil, fmt.Errorf("start instance: %w", err)
 		}
 	}
+	if start {
+		if err := m.ensureHome(ctx, c, rec, p); err != nil {
+			m.setStatus(context.Background(), rec.ID, model.ContainerError, err.Error())
+			return nil, err
+		}
+	}
 	p.Stage("reading state", 95)
 	v := m.observe(ctx, c, rec.ID)
 	return map[string]any{"container_id": rec.ID, "host_id": rec.HostID, "status": v.Status, "ipv4": v.IPv4}, nil
+}
+
+func (m *Manager) rdpListen(port int) string {
+	if port == 0 {
+		return ""
+	}
+	return fmt.Sprintf("tcp:%s:%d", m.opt.RDPListenAddress, port)
+}
+
+// ensureHome attaches the owner's persistent directory after the first start,
+// when LXD has assigned the container's isolated UID range. It is idempotent.
+func (m *Manager) ensureHome(ctx context.Context, c lxdclient.Server, rec model.Container, p *operations.Progress) error {
+	if !rec.PersistentHome || m.opt.Agent == nil {
+		return nil
+	}
+	inst, etag, err := c.GetInstance(ctx, rec.ID)
+	if err != nil {
+		return errs.Wrap(err, errs.KindUnavailable, "host_unavailable", "read instance")
+	}
+	if _, ok := inst.Devices[profiles.HomeDevice]; ok {
+		return nil
+	}
+	p.Stage("preparing persistent home", 85)
+	src, err := m.opt.Agent.PrepareHome(ctx, rec.ID, rec.OwnerID)
+	if err != nil {
+		return errs.Wrap(err, errs.KindUnavailable, "home_unavailable", "prepare persistent home")
+	}
+	put := inst.Writable()
+	if put.Devices == nil {
+		put.Devices = map[string]map[string]string{}
+	}
+	put.Devices[profiles.HomeDevice] = profiles.HomeDisk(src)
+	op, err := c.UpdateInstance(ctx, rec.ID, put, etag)
+	if err != nil {
+		return errs.Wrap(err, errs.KindUnavailable, "lxd_update_failed", "attach persistent home")
+	}
+	if err = op.Wait(ctx, nil); err != nil {
+		return fmt.Errorf("attach persistent home: %w", err)
+	}
+	return m.patch(ctx, rec.ID, func(c *model.Container) { c.HomeReady = true })
+}
+
+// SetPassword sets the desktop account password in a running container.
+func (m *Manager) SetPassword(ctx context.Context, id, password string) error {
+	if m.opt.Agent == nil {
+		return errs.Invalid("agent_unavailable", "credential management needs Type3 on the LXD host")
+	}
+	rec, err := m.record(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err = m.opt.Agent.SetPassword(ctx, rec.ID, profiles.GuestUser, password); err != nil {
+		return errs.Wrap(err, errs.KindPrecondition, "credentials_failed", "set desktop password")
+	}
+	return nil
+}
+
+// Logs returns the container's LXD log and XRDP journal.
+func (m *Manager) Logs(ctx context.Context, id string, lines int) (string, error) {
+	if m.opt.Agent == nil {
+		return "", errs.Invalid("agent_unavailable", "logs need Type3 on the LXD host")
+	}
+	rec, err := m.record(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	out, err := m.opt.Agent.Logs(ctx, rec.ID, lines)
+	if err != nil {
+		return "", errs.Wrap(err, errs.KindUnavailable, "logs_unavailable", "read logs")
+	}
+	return out, nil
 }
 
 func (m *Manager) changeState(ctx context.Context, c lxdclient.Server, name string, put api.InstanceStatePut, p *operations.Progress) error {
@@ -567,6 +670,9 @@ func (m *Manager) Start(ctx context.Context, id, actor, idemKey string) (model.O
 		err = m.changeState(ctx, c, id, api.InstanceStatePut{Action: "start", Timeout: -1}, p)
 		if err != nil && !alreadyInState(err) {
 			m.observe(context.Background(), c, id)
+			return nil, err
+		}
+		if err := m.ensureHome(ctx, c, rec, p); err != nil {
 			return nil, err
 		}
 		v := m.observe(ctx, c, id)
