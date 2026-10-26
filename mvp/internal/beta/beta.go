@@ -359,6 +359,7 @@ type Access struct {
 	Subscription *Sub     `json:"subscription"`
 }
 type Sub struct {
+	ID                string     `json:"id"`
 	Tier              string     `json:"tier"`
 	Status            string     `json:"status"`
 	CurrentPeriodEnd  *time.Time `json:"currentPeriodEnd"`
@@ -403,7 +404,7 @@ func AccessFor(ctx context.Context, db DB, user string) (Access, error) {
 		return a, e
 	}
 	var s Sub
-	e = db.QueryRow(ctx, `SELECT tier,status,current_period_end,cancel_at_period_end FROM mea.subscriptions WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 1`, user).Scan(&s.Tier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd)
+	e = db.QueryRow(ctx, `SELECT id,tier,status,current_period_end,cancel_at_period_end FROM mea.subscriptions WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 1`, user).Scan(&s.ID, &s.Tier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd)
 	if e == nil {
 		a.Subscription = &s
 	} else if !errors.Is(e, pgx.ErrNoRows) {
