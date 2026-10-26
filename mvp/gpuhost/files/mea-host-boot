@@ -43,7 +43,7 @@ table inet mea {
     iifname "lxdbr0" tcp dport 53 accept
     iifname "lxdbr0" drop
     ip saddr $LAMBDA_CIDR tcp dport 7443 accept
-    ip saddr $GUAC_CIDR tcp dport 40000-40999 accept
+    ip saddr { $GUAC_CIDR, $LAMBDA_CIDR } tcp dport 40000-40999 accept
     icmp type echo-request limit rate 5/second accept
   }
   chain forward {

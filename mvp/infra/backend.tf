@@ -75,10 +75,12 @@ resource "aws_lambda_function" "database" {
     security_group_ids = [aws_security_group.lambda.id]
   }
   environment {
-    variables = {
+    variables = merge({
       MODE       = each.key, DB_SECRET_ARN = aws_secretsmanager_secret.database[each.key == "migrate" ? "owner" : "app"].arn,
       APP_ORIGIN = local.origin, DESKTOP_CAP = tostring(var.desktop_cap), IDLE_SECONDS = tostring(var.idle_seconds), WARNING_SECONDS = tostring(var.warning_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), GRACE_SECONDS = tostring(var.grace_seconds), SECURE_COOKIES = "true", REQUIRE_VERIFICATION = tostring(var.require_verification), GUAC_SCHEMA = "/var/task/schema/guacamole.sql"
-    }
+      }, var.enable_gpu_host && each.key != "migrate" ? {
+      PAID_ENABLED = "true", TYPE3_SECRET_ARN = aws_secretsmanager_secret.type3[0].arn, ELEET_ADMISSION_LIMIT = tostring(var.eleet_admission_limit), GPU_HOST_IDLE_SECONDS = tostring(var.gpu_host_idle_seconds)
+    } : {})
   }
   logging_config {
     log_format = "Text"
@@ -103,7 +105,7 @@ resource "aws_lambda_function" "worker" {
       DESKTOP_AMI      = var.desktop_ami, DESKTOP_SUBNET = aws_subnet.public[0].id, DESKTOP_SG = aws_security_group.desktop.id,
       DESKTOP_PROFILE  = aws_iam_instance_profile.desktop.name, DESKTOP_INSTANCE_TYPE = var.desktop_type,
       IDLE_SECONDS     = tostring(var.idle_seconds), LIFETIME_SECONDS = tostring(var.lifetime_seconds), STATE_MACHINE_NAME = local.prefix, STATE_MACHINE_ARN = "arn:aws:states:${var.region}:${local.account}:stateMachine:${local.prefix}", APP_ORIGIN = local.origin, EMAIL_FROM = "hello@${var.domain}"
-    }, var.smtp_secret_arn == "" ? {} : { SMTP_SECRET_ARN = var.smtp_secret_arn })
+    }, var.smtp_secret_arn == "" ? {} : { SMTP_SECRET_ARN = var.smtp_secret_arn }, var.enable_gpu_host ? { GPU_LAUNCH_TEMPLATE = aws_launch_template.gpu_host[0].id } : {})
   }
   logging_config {
     log_format = "Text"

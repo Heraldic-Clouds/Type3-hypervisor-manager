@@ -49,11 +49,11 @@ resource "aws_security_group" "gpu_host" {
     security_groups = [aws_security_group.lambda.id]
   }
   ingress {
-    description     = "Per-container RDP proxies, Guacamole only"
+    description     = "Per-container RDP proxies for Guacamole and the control plane readiness probe"
     from_port       = 40000
     to_port         = 40999
     protocol        = "tcp"
-    security_groups = [aws_security_group.guac.id]
+    security_groups = [aws_security_group.guac.id, aws_security_group.lambda.id]
   }
   egress {
     from_port   = 0
